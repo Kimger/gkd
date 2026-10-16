@@ -29,6 +29,7 @@ import li.gkd.app.util.AndroidTarget
 import li.gkd.app.util.Constants
 import li.gkd.app.util.AndroidToastUtils
 import li.gkd.app.util.launchLogged
+import li.gkd.app.util.LogUtils
 import java.util.concurrent.Executors
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
@@ -378,6 +379,13 @@ class A11yRuleEngine(private val service: A11yCommonImpl) {
             if (!matchApp) continue
             val target = a11yContext.queryRule(rule, nodeVal) ?: continue
             if (rule.checkDelay()) {
+                if (rule.rule.actionDelayRange != null) {
+                    LogUtils.d(
+                        "Random action delay scheduled",
+                        "subsId=${rule.subsItem.id}, groupKey=${rule.g.group.key}, ruleKey=${rule.key}, ruleIndex=${rule.index}",
+                        "randomActionDelayMs=${rule.actionDelay}",
+                    )
+                }
                 RuleExecutionHost.delays.schedule(
                     rule,
                     RuleDelayScheduler.Kind.Action,
