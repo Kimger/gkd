@@ -34,7 +34,7 @@ fun readRandomDelayLogs(directory: File): List<RandomDelayLog> {
             val delay = delayPattern.find(text)?.groupValues?.get(1)?.toLongOrNull() ?: return
             result += RandomDelayLog(
                 id = "${file.name}:$startLine",
-                time = format.parse("$date $clock").time,
+                time = requireNotNull(format.parse("$date $clock")).time,
                 appId = appPattern.find(text)?.groupValues?.get(1).orEmpty(),
                 delayMillis = delay,
                 details = "$date $text",
