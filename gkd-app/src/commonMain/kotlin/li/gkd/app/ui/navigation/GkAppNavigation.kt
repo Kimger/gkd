@@ -12,6 +12,7 @@ import li.gkd.app.ui.home.BlockA11ySetupPage
 import li.gkd.app.ui.home.HomePage
 import li.gkd.app.ui.home.NotificationTextPage
 import li.gkd.app.ui.log.A11yEventLogPage
+import li.gkd.app.ui.log.RandomDelayLogPage
 import li.gkd.app.ui.log.ActivityLogPage
 import li.gkd.app.ui.platform.UiHost
 import li.gkd.app.ui.settings.A11yScopeAppListPage
@@ -66,6 +67,7 @@ fun GkAppNavigation(
 
                 ActivityLogRoute -> ActivityLogPage()
                 A11yEventLogRoute -> A11yEventLogPage()
+                RandomDelayLogRoute -> RandomDelayLogPage()
                 A11YScopeAppListRoute -> A11yScopeAppListPage(host)
                 BlockA11yAppListRoute -> BlockA11yAppListPage(host)
                 EditBlockAppListRoute -> AppWhitelistPage(host)

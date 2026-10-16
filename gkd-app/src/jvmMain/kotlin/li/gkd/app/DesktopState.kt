@@ -23,6 +23,7 @@ import li.gkd.app.ui.component.ToastState
 import li.gkd.app.ui.home.BottomNavItem
 import li.gkd.app.ui.navigation.A11YScopeAppListRoute
 import li.gkd.app.ui.navigation.A11yEventLogRoute
+import li.gkd.app.ui.navigation.RandomDelayLogRoute
 import li.gkd.app.ui.navigation.AboutRoute
 import li.gkd.app.ui.navigation.ActionLogRoute
 import li.gkd.app.ui.navigation.ActionToastRoute
@@ -271,6 +272,7 @@ private val desktopRoutes by lazy {
         "block-a11y-apps" to BlockA11yAppListRoute,
         "app-config" to AppConfigRoute("li.gkd"),
         "action-log" to ActionLogRoute(),
+        "random-delay-log" to RandomDelayLogRoute,
         "image-preview" to ImagePreviewRoute(),
         "snapshots" to SnapshotPageRoute,
         "snapshot-preview" to SnapshotPreviewRoute(0, emptyList()),

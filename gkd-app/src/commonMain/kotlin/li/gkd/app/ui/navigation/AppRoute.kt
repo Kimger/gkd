@@ -73,6 +73,9 @@ data object NotificationTextRoute : AppRoute {
 data object A11yEventLogRoute : AppRoute
 
 @Serializable
+data object RandomDelayLogRoute : AppRoute
+
+@Serializable
 data class ActionLogRoute(
     val subsId: Long? = null,
     val appId: String? = null,

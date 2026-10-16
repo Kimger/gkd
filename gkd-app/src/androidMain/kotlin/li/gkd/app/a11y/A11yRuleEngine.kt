@@ -382,7 +382,7 @@ class A11yRuleEngine(private val service: A11yCommonImpl) {
                 if (rule.rule.actionDelayRange != null) {
                     LogUtils.d(
                         "Random action delay scheduled",
-                        "subsId=${rule.subsItem.id}, groupKey=${rule.g.group.key}, ruleKey=${rule.key}, ruleIndex=${rule.index}",
+                        "appId=$rightAppId, subsId=${rule.subsItem.id}, groupKey=${rule.g.group.key}, ruleKey=${rule.key}, ruleIndex=${rule.index}",
                         "randomActionDelayMs=${rule.actionDelay}",
                     )
                 }

@@ -300,6 +300,12 @@
     <string name="event_data">事件数据</string>
     <string name="event_details">事件详情</string>
     <string name="event_log_title">事件日志</string>
+    <string name="random_delay_log_title">随机延时日志</string>
+    <string name="random_delay_log_description">记录开始等待时的随机延时；点击结果请查看触发记录。历史随文件日志保留。</string>
+    <string name="random_delay_log_refresh">刷新</string>
+    <string name="random_delay_log_copy">复制</string>
+    <string name="random_delay_log_unknown_app">应用未记录</string>
+    <string name="random_delay_log_value">随机延时：%1$s ms</string>
     <string name="event_log_window_minimize">缩小事件日志窗口</string>
     <string name="event_log_window_restore">恢复事件日志窗口</string>
     <string name="event_pending_count">+%1$s</string>

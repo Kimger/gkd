@@ -47,6 +47,8 @@ import li.gkd.app.resources.advanced_upload_share
 import li.gkd.app.resources.crash_reports
 import li.gkd.app.resources.crash_reports_description
 import li.gkd.app.resources.event_log_title
+import li.gkd.app.resources.random_delay_log_title
+import li.gkd.app.resources.random_delay_log_description
 import li.gkd.app.resources.event_service_description
 import li.gkd.app.resources.event_service_label
 import li.gkd.app.resources.github_cookie_label
@@ -93,6 +95,7 @@ import li.gkd.app.ui.component.GkTextSwitch
 import li.gkd.app.ui.component.GkTopAppBar
 import li.gkd.app.ui.component.autoFocus
 import li.gkd.app.ui.navigation.A11yEventLogRoute
+import li.gkd.app.ui.navigation.RandomDelayLogRoute
 import li.gkd.app.ui.navigation.ActivityLogRoute
 import li.gkd.app.ui.navigation.CrashReportRoute
 import li.gkd.app.ui.navigation.SnapshotPageRoute
@@ -272,6 +275,11 @@ fun AdvancedPage(
                 title = stringResource(Res.string.event_log_title),
                 subtitle = stringResource(Res.string.a11y_event_logs),
                 onClick = { mainVm.navigator.navigate(A11yEventLogRoute) },
+            )
+            GkSettingItem(
+                title = stringResource(Res.string.random_delay_log_title),
+                subtitle = stringResource(Res.string.random_delay_log_description),
+                onClick = { mainVm.navigator.navigate(RandomDelayLogRoute) },
             )
             GkSettingItem(
                 title = stringResource(Res.string.crash_reports),
