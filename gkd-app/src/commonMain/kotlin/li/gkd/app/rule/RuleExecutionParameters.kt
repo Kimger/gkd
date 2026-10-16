@@ -25,6 +25,7 @@ class RuleExecutionParameters(
     val resetMatch = rule.resetMatch ?: group.resetMatch
     val matchDelay = rule.matchDelay ?: group.matchDelay ?: 0L
     val actionDelay = rule.actionDelay ?: group.actionDelay ?: 0L
+    val actionDelayRange = rule.actionDelayRange
     val matchTime = rule.matchTime ?: group.matchTime
     val forcedTime = rule.forcedTime ?: group.forcedTime ?: 0L
     val matchOptions = MatchOptions(

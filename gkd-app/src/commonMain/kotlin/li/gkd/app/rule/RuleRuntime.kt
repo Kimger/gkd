@@ -1,6 +1,7 @@
 package li.gkd.app.rule
 
 import kotlinx.atomicfu.atomic
+import kotlin.random.Random
 
 data class RuleMatchEnvironment(
     val launcherAppId: String = "",
@@ -10,6 +11,9 @@ data class RuleMatchEnvironment(
 /** Owned by the execution host; shared across its rule snapshots, never a global service. */
 class RuleRuntime(
     val now: () -> Long = System::currentTimeMillis,
+    val nextRandomLong: (Long, Long) -> Long = { from, until ->
+        Random.nextLong(from, until)
+    },
     val environment: () -> RuleMatchEnvironment = { RuleMatchEnvironment() },
     private val cancelPending: (ResolvedRule) -> Unit = {},
 ) {

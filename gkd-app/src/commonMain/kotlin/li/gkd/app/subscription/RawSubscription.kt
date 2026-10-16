@@ -252,6 +252,12 @@ data class RawSubscription(
         val duration: Long,
     )
 
+    @Serializable
+    data class ActionDelayRange(
+        val minimum: Long,
+        val maximum: Long,
+    )
+
     interface LocationProps {
         // click
         val position: Position?
@@ -263,6 +269,7 @@ data class RawSubscription(
     sealed interface RawRuleProps : RawCommonProps, LocationProps {
         val name: String?
         val key: Int?
+        val actionDelayRange: ActionDelayRange?
         val preKeys: List<Int>?
         val action: String?
         val matches: List<String>?
@@ -374,6 +381,7 @@ data class RawSubscription(
         override val name: String?,
         override val actionCd: Long?,
         override val actionDelay: Long?,
+        override val actionDelayRange: ActionDelayRange?,
         override val fastQuery: Boolean?,
         override val matchRoot: Boolean?,
         override val matchDelay: Long?,
@@ -463,6 +471,7 @@ data class RawSubscription(
         override val actionMaximumKey: Int?,
         override val actionCd: Long?,
         override val actionDelay: Long?,
+        override val actionDelayRange: ActionDelayRange?,
         override val fastQuery: Boolean?,
         override val matchRoot: Boolean?,
         override val actionMaximum: Int?,
@@ -664,6 +673,21 @@ data class RawSubscription(
                 else -> null
             }
 
+        private fun getActionDelayRange(jsonObject: JsonObject?): ActionDelayRange? {
+            val element = jsonObject?.get("actionDelayRange") ?: return null
+            require(element is JsonObject) { "actionDelayRange must be an object" }
+            val minimum = getLong(element, "minimum")
+                ?: error("actionDelayRange.minimum is required")
+            val maximum = getLong(element, "maximum")
+                ?: error("actionDelayRange.maximum is required")
+            require(minimum >= 0) { "actionDelayRange.minimum must be non-negative" }
+            require(maximum >= minimum) {
+                "actionDelayRange.maximum must be greater than or equal to minimum"
+            }
+            require(maximum < Long.MAX_VALUE) { "actionDelayRange.maximum is too large" }
+            return ActionDelayRange(minimum, maximum)
+        }
+
         private fun getInt(jsonObject: JsonObject?, key: String): Int? =
             when (val p = jsonObject?.get(key)) {
                 JsonNull, null -> null
@@ -732,6 +756,7 @@ data class RawSubscription(
                 name = getString(jsonObject, "name"),
                 actionCd = getLong(jsonObject, "actionCd") ?: getLong(jsonObject, "cd"),
                 actionDelay = getLong(jsonObject, "actionDelay") ?: getLong(jsonObject, "delay"),
+                actionDelayRange = getActionDelayRange(jsonObject),
                 preKeys = getIntIArray(jsonObject, "preKeys"),
                 action = getString(jsonObject, "action"),
                 fastQuery = getBoolean(jsonObject, "fastQuery"),
@@ -839,6 +864,7 @@ data class RawSubscription(
                 name = getString(jsonObject, "name"),
                 actionCd = getLong(jsonObject, "actionCd"),
                 actionDelay = getLong(jsonObject, "actionDelay"),
+                actionDelayRange = getActionDelayRange(jsonObject),
                 fastQuery = getBoolean(jsonObject, "fastQuery"),
                 matchRoot = getBoolean(jsonObject, "matchRoot"),
                 actionMaximum = getInt(jsonObject, "actionMaximum"),

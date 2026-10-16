@@ -20,7 +20,7 @@ sealed class ResolvedRule(
     val excludeMatches get() = parameters.excludeMatches
     val excludeAllMatches get() = parameters.excludeAllMatches
     val matchDelay get() = parameters.matchDelay
-    val actionDelay get() = parameters.actionDelay
+    val actionDelay get() = currentActionDelay.value
     private val matchTime get() = parameters.matchTime
     private val forcedTime get() = parameters.forcedTime
     val matchOptions get() = parameters.matchOptions
@@ -76,12 +76,21 @@ sealed class ResolvedRule(
     private var preRules = emptySet<ResolvedRule>()
 
     private val actionDelayTriggerTime = atomic(0L)
+    private val currentActionDelay = atomic(0L)
     fun checkDelay(): Boolean {
-        if (actionDelay > 0 && actionDelayTriggerTime.value == 0L) {
-            actionDelayTriggerTime.value = runtime.now()
-            return true
+        if (actionDelayTriggerTime.value != 0L) return false
+        val range = parameters.actionDelayRange
+        val delayMillis = if (range == null) {
+            parameters.actionDelay
+        } else if (range.minimum == range.maximum) {
+            range.minimum
+        } else {
+            runtime.nextRandomLong(range.minimum, range.maximum + 1)
         }
-        return false
+        if (delayMillis <= 0) return false
+        currentActionDelay.value = delayMillis
+        actionDelayTriggerTime.value = runtime.now()
+        return true
     }
 
     fun checkForced(): Boolean {
@@ -94,6 +103,7 @@ sealed class ResolvedRule(
         val t = runtime.now()
         actionTriggerTime.value = t
         actionDelayTriggerTime.value = 0L
+        currentActionDelay.value = 0L
         actionCount.incrementAndGet()
         runtime.onTriggered(this, t)
     }
@@ -113,6 +123,7 @@ sealed class ResolvedRule(
     fun resetState(t: Long) {
         actionCount.value = 0
         actionDelayTriggerTime.value = 0L
+        currentActionDelay.value = 0L
         actionTriggerTime.value = 0
         runtime.onReset(this)
         matchChangedTime.value = t

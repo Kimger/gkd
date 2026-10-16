@@ -131,6 +131,55 @@ class RuleRuntimeTest {
     }
 
     @Test
+    fun ruleActionDelayRangeOverridesFixedDelayForThatRule() {
+        var now = 10_000L
+        val rule = build(
+            RuleRuntime(now = { now }), """[{key:1,name:'Random delay',rules:[{matches:'*',
+            actionDelay:500,actionDelayRange:{minimum:50,maximum:50}}]}]"""
+        ).appIdToRules.getValue("app.test").single()
+        rule.resetState(now)
+
+        assertTrue(rule.checkDelay())
+        now += 49
+        assertEquals(RuleStatus.ActionDelay, rule.status)
+        now++
+        assertEquals(RuleStatus.Ready, rule.status)
+    }
+
+    @Test
+    fun ruleActionDelayRangeSamplesOncePerTrigger() {
+        var now = 10_000L
+        var randomCalls = 0
+        val runtime = RuleRuntime(
+            now = { now },
+            nextRandomLong = { from, until ->
+                assertEquals(50L, from)
+                assertEquals(101L, until)
+                randomCalls++
+                75L
+            },
+        )
+        val rule = build(
+            runtime, """[{key:1,name:'Random delay',rules:[{matches:'*',
+            actionDelayRange:{minimum:50,maximum:100}}]}]"""
+        ).appIdToRules.getValue("app.test").single()
+        rule.resetState(now)
+
+        assertTrue(rule.checkDelay())
+        assertEquals(1, randomCalls)
+        now += 74
+        assertEquals(RuleStatus.ActionDelay, rule.status)
+        assertFalse(rule.checkDelay())
+        assertEquals(1, randomCalls)
+        now++
+        assertEquals(RuleStatus.Ready, rule.status)
+
+        rule.trigger()
+        assertTrue(rule.checkDelay())
+        assertEquals(2, randomCalls)
+    }
+
+    @Test
     fun globalRulesReadCurrentPlatformInputsWithoutAndroidRepositories() {
         var environment = RuleMatchEnvironment("launcher", setOf("system.app"))
         val runtime = RuleRuntime(environment = { environment })
