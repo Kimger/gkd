@@ -12,3 +12,16 @@ fun acceptTaskForegroundApp(
     }
     return activeWindowAppId() != currentAppId
 }
+
+/** A real application window may correct a stale launcher report without waiting for its grace period. */
+fun canCorrectLauncherReport(
+    currentAppId: String,
+    eventAppId: String,
+    launcherAppId: String,
+    activeWindowAppId: () -> String?,
+): Boolean {
+    if (currentAppId != launcherAppId || eventAppId == launcherAppId || eventAppId.isEmpty()) {
+        return false
+    }
+    return activeWindowAppId() == eventAppId
+}

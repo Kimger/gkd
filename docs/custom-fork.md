@@ -88,6 +88,12 @@ Release 包名为 `li.songe.gkd`。官方版与自签名版签名不同，首次
 
 安装升级后，若 Shizuku 已授权但自动化未运行，可在 GKD 中停止并重新启动特权服务，再确认工作模式与规则开关。
 
+## 开屏前台识别兼容
+
+针对小米 OS4 上已复现的“开屏窗口仍属于应用，但任务栈短暂报告为桌面”情况，增加活动窗口核对：窗口仍属于当前应用时保留其匹配状态；若已误记为桌面，后续应用事件与活动窗口一致时允许立即纠正，不等待原有任务栈保护时间。无法确认窗口归属时保留原有判断，不按应用包名单独写特例。
+
+相关实现位于 `A11yState.kt` 和 `TaskForegroundPolicy.kt`；回归测试为 `TaskForegroundPolicyTest`。诊断日志可搜索 `Ignored conflicting launcher task report` 或 `Corrected launcher task report from active window`。具体 ROM 和应用的真机表现仍需验证。
+
 ## 同步上游
 
 本地 `origin` 指向自己的 Fork，`upstream` 指向官方仓库。先确认工作区无未提交修改：
@@ -114,7 +120,7 @@ git merge main
 合并后按实际改动做验证，再推送功能分支：
 
 ```powershell
-.\gradlew.bat :gkd-app:jvmTest --tests "li.gkd.app.rule.RuleRuntimeTest" --tests "li.gkd.app.logging.RandomDelayLogTest"
+.\gradlew.bat :gkd-app:jvmTest --tests "li.gkd.app.rule.RuleRuntimeTest" --tests "li.gkd.app.rule.TaskForegroundPolicyTest" --tests "li.gkd.app.logging.RandomDelayLogTest"
 # 完成当前会话的 SDK 与签名配置后：
 .\gradlew.bat :gkd-android:assembleGkdRelease --no-configuration-cache
 git push origin dev/random-action-delay

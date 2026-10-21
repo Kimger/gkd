@@ -25,4 +25,20 @@ class TaskForegroundPolicyTest {
         assertTrue(acceptTaskForegroundApp("launcher", "launcher", "launcher", unexpectedRead))
         assertTrue(acceptTaskForegroundApp("launcher", "", "launcher", unexpectedRead))
     }
+
+    @Test
+    fun correctsEarlierLauncherReportOnlyWhenApplicationEventAndWindowAgree() {
+        assertTrue(canCorrectLauncherReport("launcher", "bank", "launcher") { "bank" })
+        assertFalse(canCorrectLauncherReport("launcher", "bank", "launcher") { "launcher" })
+        assertFalse(canCorrectLauncherReport("launcher", "bank", "launcher") { null })
+        assertFalse(canCorrectLauncherReport("launcher", "bank", "launcher") { "other.app" })
+    }
+
+    @Test
+    fun correctionDoesNotOverrideOtherApplicationsOrReadForLauncherEvents() {
+        val unexpectedRead: () -> String? = { error("Unexpected window read") }
+        assertFalse(canCorrectLauncherReport("other.app", "bank", "launcher", unexpectedRead))
+        assertFalse(canCorrectLauncherReport("launcher", "launcher", "launcher", unexpectedRead))
+        assertFalse(canCorrectLauncherReport("launcher", "", "launcher", unexpectedRead))
+    }
 }

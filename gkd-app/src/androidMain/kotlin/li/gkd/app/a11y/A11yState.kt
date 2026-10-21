@@ -27,6 +27,7 @@ import li.gkd.app.rule.ResolvedRule
 import li.gkd.app.rule.RuleSummary
 import li.gkd.app.rule.TopActivity
 import li.gkd.app.rule.acceptTaskForegroundApp
+import li.gkd.app.rule.canCorrectLauncherReport
 import li.gkd.app.service.updateTopTaskAppId
 import li.gkd.app.settings.SettingsRepository
 import li.gkd.app.ui.rule.statusText
@@ -127,8 +128,17 @@ object A11yState {
         } else if (scene == ActivityScene.A11y) {
             if (idChanged && lastActivityForceUpdateTime > 0) {
                 // ITaskStackListener 大部分场景快于无障碍
-                if (t - lastActivityForceUpdateTime < 1000) return
-                if (activityId != null && t - lastActivityForceUpdateTime < 3000) return
+                val suppressEvent = t - lastActivityForceUpdateTime < 1000 ||
+                        (activityId != null && t - lastActivityForceUpdateTime < 3000)
+                if (suppressEvent) {
+                    if (!canCorrectLauncherReport(oldActivity.appId, appId, launcherAppId) {
+                            A11yRuntime.getRoot()?.packageName?.toString()
+                        }) return
+                    LogUtils.d(
+                        "Corrected launcher task report from active window",
+                        "launcherAppId=${oldActivity.appId}, activeWindowAppId=$appId",
+                    )
+                }
             }
             if (isSame && t - lastActivityUpdateTime < 1000) return
         }
