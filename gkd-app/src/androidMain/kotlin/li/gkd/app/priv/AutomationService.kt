@@ -19,6 +19,7 @@ import li.gkd.app.a11y.A11yCommonImpl
 import li.gkd.app.a11y.A11yRuleEngine
 import li.gkd.app.a11y.A11yRuntime
 import li.gkd.app.appScope
+import li.gkd.app.automation.RemoteAutomationControl
 import li.gkd.app.record.RuntimeRecordRepository
 import li.gkd.app.resources.Res
 import li.gkd.app.resources.automation_partially_disabled
@@ -138,6 +139,10 @@ class AutomationService private constructor(
     companion object {
         private val connectLock = Any()
 
+        fun pauseForRemoteControl() = synchronized(connectLock) {
+            uiAutomationFlow.value?.shutdown(true)
+        }
+
         fun isOtherUiAutomationRunning(): Boolean {
             if (uiAutomationFlow.value != null) return false
             return SystemServiceDump.isUiAutomationRunning()
@@ -156,6 +161,7 @@ class AutomationService private constructor(
 
         fun tryConnect(silent: Boolean = false) {
             synchronized(connectLock) {
+                if (RemoteAutomationControl.isPaused) return@synchronized
                 uiAutomationOccupiedFlow.value = false
                 if (uiAutomationFlow.value?.connected == true) {
                     return@synchronized

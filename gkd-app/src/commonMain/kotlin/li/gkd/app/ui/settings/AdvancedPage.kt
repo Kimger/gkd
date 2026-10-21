@@ -49,6 +49,8 @@ import li.gkd.app.resources.crash_reports_description
 import li.gkd.app.resources.event_log_title
 import li.gkd.app.resources.random_delay_log_title
 import li.gkd.app.resources.random_delay_log_description
+import li.gkd.app.resources.remote_automation_control_title
+import li.gkd.app.resources.remote_automation_control_description
 import li.gkd.app.resources.event_service_description
 import li.gkd.app.resources.event_service_label
 import li.gkd.app.resources.github_cookie_label
@@ -237,6 +239,12 @@ fun AdvancedPage(
             )
 
             AdvancedSectionTitle(stringResource(Res.string.advanced_live_debug))
+            GkTextSwitch(
+                title = stringResource(Res.string.remote_automation_control_title),
+                subtitle = stringResource(Res.string.remote_automation_control_description),
+                checked = store.enableRemoteAutomationControl,
+                onCheckedChange = host::setRemoteAutomationControlEnabled,
+            )
             HttpServiceItem(
                 running = httpRunning,
                 settingsSelected = showHttpSettingsDialog,
@@ -305,6 +313,8 @@ fun AdvancedPage(
 expect fun UiHost.setSnapshotButtonEnabled(enabled: Boolean)
 
 expect fun UiHost.setHttpServiceEnabled(enabled: Boolean)
+
+expect fun UiHost.setRemoteAutomationControlEnabled(enabled: Boolean)
 
 expect fun UiHost.setActivityMonitorEnabled(enabled: Boolean)
 

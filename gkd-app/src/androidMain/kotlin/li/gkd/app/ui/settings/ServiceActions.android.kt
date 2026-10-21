@@ -2,6 +2,9 @@ package li.gkd.app.ui.settings
 
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
+import li.gkd.app.appScope
+import li.gkd.app.automation.RemoteAutomationControl
 import li.gkd.app.permission.PermissionStates
 import li.gkd.app.platform.service.ServiceController
 import li.gkd.app.service.ActivityService
@@ -36,6 +39,12 @@ actual fun UiHost.setHttpServiceEnabled(enabled: Boolean) {
         ) {
             ServiceController.setHttpEnabled(enabled)
         }
+    }
+}
+
+actual fun UiHost.setRemoteAutomationControlEnabled(enabled: Boolean) {
+    appScope.launchUi(Dispatchers.IO) {
+        RemoteAutomationControl.setEnabled(enabled)
     }
 }
 

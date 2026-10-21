@@ -1047,4 +1047,6 @@
     <string name="global_control_group_off">规则总开关已关闭。即使在此应用中开启，也不会生效。</string>
     <string name="global_rule_enable_builtin_partial_warning">订阅中默认关闭了此应用下的部分子规则。</string>
     <string name="global_rule_enable_name_list_warning">此应用已有以下应用规则，因此这条全局规则默认关闭：</string>
+    <string name="remote_automation_control_title">允许电脑临时接管自动化</string>
+    <string name="remote_automation_control_description">通过 ADB 广播暂停与恢复自动化；30 秒未收到心跳后尝试恢复，其他自动化仍占用时等待释放。默认关闭。</string>
 </resources>

@@ -11,6 +11,7 @@ data class SettingsStore(
     val enableAutomator: Boolean = false,
     val automatorMode: Int = AutomatorMode.A11y.value,
     val enableMatch: Boolean = true,
+    val enableRemoteAutomationControl: Boolean = false,
     val enableStatusService: Boolean = false,
     val excludeFromRecents: Boolean = false,
     val captureScreenshot: Boolean = false,

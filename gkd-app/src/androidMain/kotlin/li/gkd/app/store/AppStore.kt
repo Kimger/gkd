@@ -1,5 +1,6 @@
 package li.gkd.app.store
 
+import li.gkd.app.automation.RemoteAutomationControl
 import li.gkd.app.resources.Res
 import li.gkd.app.resources.rule_matching_enable
 import li.gkd.app.resources.rule_matching_pause
@@ -19,6 +20,7 @@ object AppStore {
     }
 
     fun updateEnableAutomator(value: Boolean) {
+        if (!value) RemoteAutomationControl.cancelRestore()
         if (value == SettingsRepository.settings.value.enableAutomator) return
         SettingsRepository.updateSettings { it.copy(enableAutomator = value) }
     }

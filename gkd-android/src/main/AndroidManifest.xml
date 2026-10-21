@@ -109,6 +109,11 @@
         </activity>
 
         <receiver
+            android:name="li.gkd.app.receiver.RemoteAutomationReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
+
+        <receiver
             android:name="li.gkd.app.receiver.BootReceiver"
             android:exported="false">
             <intent-filter>

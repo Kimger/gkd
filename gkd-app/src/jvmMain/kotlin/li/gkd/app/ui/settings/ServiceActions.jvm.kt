@@ -11,6 +11,10 @@ actual fun UiHost.setHttpServiceEnabled(enabled: Boolean) {
     state.unsupported()
 }
 
+actual fun UiHost.setRemoteAutomationControlEnabled(enabled: Boolean) {
+    state.unsupported()
+}
+
 actual fun UiHost.setActivityMonitorEnabled(enabled: Boolean) {
     state.unsupported()
 }
