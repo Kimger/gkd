@@ -59,6 +59,11 @@ class A11yRuleEngine(private val service: A11yCommonImpl) {
         startQueryJob()
     }
 
+    fun onForegroundConfirmed() {
+        // The event consumer may have returned while the window confirmation was pending.
+        startQueryJob(byForced = true)
+    }
+
     val safeActiveWindow: AccessibilityNodeInfo?
         get() = try {
             // 某些应用耗时 554ms

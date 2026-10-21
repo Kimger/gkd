@@ -92,6 +92,8 @@ Release 包名为 `li.songe.gkd`。官方版与自签名版签名不同，首次
 
 针对小米 OS4 上已复现的“开屏窗口仍属于应用，但任务栈短暂报告为桌面”情况，增加活动窗口核对：窗口仍属于当前应用时保留其匹配状态；若已误记为桌面，后续应用事件与活动窗口一致时允许立即纠正，不等待原有任务栈保护时间。无法确认窗口归属时保留原有判断，不按应用包名单独写特例。
 
+窗口核对在前台状态锁外异步执行，最多等待 100ms；出现新前台事件后丢弃旧核对结果。确认纠正后同步服务运行模式所用的前台应用状态，并主动恢复规则查询，避免等待下一次无障碍事件。
+
 相关实现位于 `A11yState.kt` 和 `TaskForegroundPolicy.kt`；回归测试为 `TaskForegroundPolicyTest`。诊断日志可搜索 `Ignored conflicting launcher task report` 或 `Corrected launcher task report from active window`。具体 ROM 和应用的真机表现仍需验证。
 
 ## 同步上游

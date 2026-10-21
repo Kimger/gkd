@@ -7,7 +7,10 @@ import android.provider.Settings
 import android.util.LruCache
 import android.view.accessibility.AccessibilityNodeInfo
 import com.android.internal.R
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -98,6 +101,7 @@ object A11yState {
     private var lastActivityForceUpdateTime = 0L
 
     private var lastAppId = Constants.systemUiAppId
+    private var foregroundRevision = 0L
 
     fun updateTopActivity(
         appId: String,
@@ -105,17 +109,64 @@ object A11yState {
         scene: ActivityScene = ActivityScene.A11y,
         @CallSite loc: String = "",
     ): Unit = synchronized(lock) {
+        foregroundRevision++
+        applyTopActivity(appId, activityId, scene, loc)
+    }
+
+    // All callers hold lock. Window reads are dispatched separately so neither Binder
+    // callbacks nor other foreground writers wait for rootInActiveWindow.
+    private fun applyTopActivity(
+        appId: String,
+        activityId: String?,
+        scene: ActivityScene,
+        loc: String,
+        windowChecked: Boolean = false,
+        activeWindowAppId: String? = null,
+    ) {
         val t = System.currentTimeMillis()
         val oldActivity = activityRuleFlow.value.topActivity
+        val suppressEvent = scene == ActivityScene.A11y && appId != oldActivity.appId &&
+                lastActivityForceUpdateTime > 0 &&
+                (t - lastActivityForceUpdateTime < 1000 ||
+                        (activityId != null && t - lastActivityForceUpdateTime < 3000))
+        val needsWindow = (scene == ActivityScene.TaskStack && appId == launcherAppId &&
+                oldActivity.appId != launcherAppId && oldActivity.appId.isNotEmpty()) ||
+                (suppressEvent && oldActivity.appId == launcherAppId &&
+                        appId != launcherAppId && appId.isNotEmpty())
+        if (needsWindow && !windowChecked) {
+            val revision = foregroundRevision
+            appScope.launch(Dispatchers.Default) {
+                val result = CompletableDeferred<String?>()
+                val reader = appScope.launch(Dispatchers.IO) {
+                    result.complete(A11yRuntime.getRoot()?.packageName?.toString())
+                }
+                val windowAppId = try {
+                    withTimeoutOrNull(100L) { result.await() }
+                } finally {
+                    reader.cancel()
+                }
+                val applied = synchronized(lock) {
+                    // Never apply a delayed observation over a newer foreground event.
+                    if (foregroundRevision == revision) {
+                        applyTopActivity(appId, activityId, scene, loc, true, windowAppId)
+                        activityRuleFlow.value.topActivity.appId == appId
+                    } else false
+                }
+                if (applied) {
+                    A11yRuntime.service?.ruleEngine?.onForegroundConfirmed()
+                }
+            }
+            return
+        }
         if (scene == ActivityScene.TaskStack) {
             if (!acceptTaskForegroundApp(appId, oldActivity.appId, launcherAppId) {
-                    A11yRuntime.getRoot()?.packageName?.toString()
+                    activeWindowAppId
                 }) {
                 LogUtils.d(
                     "Ignored conflicting launcher task report",
                     "taskAppId=$appId, activeWindowAppId=${oldActivity.appId}",
                 )
-                return@synchronized
+                return
             }
             updateTopTaskAppId(appId)
         }
@@ -126,13 +177,16 @@ object A11yState {
         if (scene == ActivityScene.TaskStack) {
             lastActivityForceUpdateTime = t
         } else if (scene == ActivityScene.A11y) {
+            if (windowChecked && canCorrectLauncherReport(
+                    oldActivity.appId, appId, launcherAppId,
+                ) { activeWindowAppId }) {
+                updateTopTaskAppId(appId)
+            }
             if (idChanged && lastActivityForceUpdateTime > 0) {
                 // ITaskStackListener 大部分场景快于无障碍
-                val suppressEvent = t - lastActivityForceUpdateTime < 1000 ||
-                        (activityId != null && t - lastActivityForceUpdateTime < 3000)
                 if (suppressEvent) {
                     if (!canCorrectLauncherReport(oldActivity.appId, appId, launcherAppId) {
-                            A11yRuntime.getRoot()?.packageName?.toString()
+                            activeWindowAppId
                         }) return
                     LogUtils.d(
                         "Corrected launcher task report from active window",
