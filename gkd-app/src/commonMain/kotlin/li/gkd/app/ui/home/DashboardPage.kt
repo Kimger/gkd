@@ -1,5 +1,6 @@
 package li.gkd.app.ui.home
 
+import li.gkd.app.META
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -32,46 +33,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import li.gkd.app.ui.component.gkTopAppBarScroll
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import li.gkd.app.app.AppInfoRepository
 import li.gkd.app.network.AppLinks
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.action_count_summary
-import li.gkd.app.resources.action_log_description
-import li.gkd.app.resources.action_log_open
-import li.gkd.app.resources.action_log_recent_prefix
-import li.gkd.app.resources.action_log_title
-import li.gkd.app.resources.activity_log_open
-import li.gkd.app.resources.activity_log_title
-import li.gkd.app.resources.activity_record_description
-import li.gkd.app.resources.adb_permission_restricted
-import li.gkd.app.resources.adb_restricted_privilege_notice
-import li.gkd.app.resources.app_permission_restricted
-import li.gkd.app.resources.app_rule_summary_open
-import li.gkd.app.resources.data_load_failed
-import li.gkd.app.resources.documentation_description
-import li.gkd.app.resources.documentation_open
-import li.gkd.app.resources.gkd_learn_more
-import li.gkd.app.resources.item_toggle_description
-import li.gkd.app.resources.permission_restricted_privilege_notice
-import li.gkd.app.resources.persistent_notification
-import li.gkd.app.resources.privilege_service_open
-import li.gkd.app.resources.privilege_service_state_connected
-import li.gkd.app.resources.privilege_service_state_disconnected
-import li.gkd.app.resources.privilege_service_state_lost
-import li.gkd.app.resources.restriction_details_open
-import li.gkd.app.resources.rules_empty
-import li.gkd.app.resources.service_state
-import li.gkd.app.resources.service_state_toggle
-import li.gkd.app.resources.status_statistics_description
-import li.gkd.app.resources.subscription_app_rule_counts
-import li.gkd.app.resources.subscription_global_count
-import li.gkd.app.resources.work_mode_open
-import li.gkd.app.resources.work_mode_title
+import li.gkd.app.resources.*
 import li.gkd.app.rule.RuleGroupSnapshot
 import li.gkd.app.rule.ruleGroupState
 import li.gkd.app.settings.SettingsRepository
@@ -79,6 +48,8 @@ import li.gkd.app.state.Loadable
 import li.gkd.app.subscription.SubscriptionRepository
 import li.gkd.app.ui.MainViewModel
 import li.gkd.app.ui.component.GkGroupNameText
+import li.gkd.app.ui.component.GkRuleStats
+import li.gkd.app.ui.component.GkRuleStatsData
 import li.gkd.app.ui.component.GkIcon
 import li.gkd.app.ui.component.GkIcons
 import li.gkd.app.ui.component.GkPageBottomSpace
@@ -94,12 +65,11 @@ import li.gkd.app.ui.navigation.ActivityLogRoute
 import li.gkd.app.ui.navigation.AppConfigRoute
 import li.gkd.app.ui.navigation.PrivilegeServiceRoute
 import li.gkd.app.ui.navigation.WorkModeRoute
-import li.gkd.app.ui.option.AutomatorModeOption
-import li.gkd.app.ui.option.findOption
+import li.gkd.app.settings.AutomatorMode
+import li.gkd.app.model.findOption
 import li.gkd.app.ui.platform.UiHost
 import li.gkd.app.ui.platform.setStatusServiceEnabled
 import li.gkd.app.ui.platform.switchAutomator
-import li.gkd.app.ui.settings.appVersion
 import li.gkd.app.ui.style.itemHorizontalPadding
 import li.gkd.app.ui.style.itemVerticalPadding
 import li.gkd.app.ui.style.surfaceCardColors
@@ -147,7 +117,7 @@ fun dashboardPage(
     vm: HomeViewModel,
 ): ScaffoldExt {
     val mainVm = MainViewModel.requireCurrent()
-    val appName = appVersion().appName
+    val appName = META.appName
     val store by SettingsRepository.settings.collectAsStateWithLifecycle()
     val scopeApps by SettingsRepository.a11yScopeAppList.collectAsStateWithLifecycle()
     val platform = dashboardPlatformState()
@@ -169,16 +139,7 @@ fun dashboardPage(
     val latest = latestState.value?.record
     val scroll = rememberColumnScrollState()
     ResetPageScrollOnRequest(vm.homeState, BottomNavItem.Dashboard, scroll::resetScrollAndAwait)
-    val privilegeLabel =
-        stringResource(
-            when (platform.privilegeStatus) {
-                DashboardPrivilegeStatus.Connected -> Res.string.privilege_service_state_connected
-                DashboardPrivilegeStatus.DisconnectedDesired ->
-                    Res.string.privilege_service_state_lost
-                DashboardPrivilegeStatus.Disconnected ->
-                    Res.string.privilege_service_state_disconnected
-            }
-        )
+    val privilegeLabel = stringResource(platform.privilegeStatus.labelResource)
     val openPrivilege = stringResource(Res.string.privilege_service_open)
     val connected = platform.privilegeStatus == DashboardPrivilegeStatus.Connected
     val warningTitle =
@@ -194,7 +155,7 @@ fun dashboardPage(
     val openRestrictionDetails = stringResource(Res.string.restriction_details_open)
     return ScaffoldExt(
         BottomNavItem.Dashboard,
-        modifier = Modifier.nestedScroll(scroll.scrollBehavior.nestedScrollConnection),
+        modifier = Modifier.gkTopAppBarScroll(scroll.scrollBehavior),
         topBar = {
             GkTopAppBar(
                 scrollBehavior = scroll.scrollBehavior,
@@ -300,7 +261,7 @@ fun dashboardPage(
                             else -> mainVm.navigator.navigate(route)
                         }
                     },
-                    AutomatorModeOption.objects.findOption(store.automatorMode).label,
+                    stringResource(AutomatorMode.entries.findOption(store.automatorMode).labelResource),
                     { mainVm.navigator.navigate(WorkModeRoute) },
                 )
             }
@@ -312,7 +273,25 @@ fun dashboardPage(
                 host::setStatusServiceEnabled,
             )
             TriggerOverviewCard(
-                dashboardSummary(rules, actionCount),
+                {
+                    when (val state = rules) {
+                        is Loadable.Ready -> {
+                            val groups = state.value.groups
+                            GkRuleStats(
+                                stats = GkRuleStatsData(
+                                    globalGroups = groups.globalGroups.size,
+                                    apps = groups.appSize,
+                                    appGroups = groups.appGroupSize,
+                                ),
+                                triggerCount = actionCount,
+                                emptyText = "",
+                                textStyle = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        is Loadable.Loading -> Unit
+                        is Loadable.Failure -> Text(stringResource(Res.string.data_load_failed))
+                    }
+                },
                 HomeDataText.latest(
                     latest,
                     subscriptions.value?.subscriptions.orEmpty(),
@@ -534,7 +513,7 @@ private fun IconTextCard(
 
 @Composable
 private fun TriggerOverviewCard(
-    subsStatus: String,
+    statistics: @Composable () -> Unit,
     latestRecordDesc: String?,
     latestRecordIsGlobal: Boolean,
     onOpenActionLog: () -> Unit,
@@ -589,37 +568,31 @@ private fun TriggerOverviewCard(
                 contentDescription = null,
             )
         }
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = itemVerticalPadding)) {
-            AnimatedVisibility(subsStatus.isNotEmpty()) {
-                Text(
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                    text = subsStatus,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Column(
+            modifier = Modifier.fillMaxWidth()
+                .clickable(
+                    enabled = latestRecordDesc != null,
+                    onClickLabel = stringResource(Res.string.app_rule_summary_open),
+                    onClick = onOpenLatestRecord,
                 )
-            }
+                .padding(horizontal = itemVerticalPadding + 8.dp)
+                .padding(bottom = itemVerticalPadding),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            statistics()
 
             if (latestLoadFailed) {
                 Text(
                     text =
                         stringResource(Res.string.action_log_recent_prefix) +
                             stringResource(Res.string.data_load_failed),
-                    modifier = Modifier.padding(horizontal = 8.dp),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                 )
             }
             if (latestRecordDesc != null) {
                 Row(
-                    modifier =
-                        Modifier.padding(horizontal = 4.dp)
-                            .clip(MaterialTheme.shapes.extraSmall)
-                            .clickable(
-                                onClickLabel = stringResource(Res.string.app_rule_summary_open),
-                                onClick = onOpenLatestRecord,
-                            )
-                            .fillMaxWidth()
-                            .padding(horizontal = 4.dp)
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         GkGroupNameText(
@@ -638,7 +611,6 @@ private fun TriggerOverviewCard(
                     )
                 }
             }
-            Spacer(modifier = Modifier.height(itemVerticalPadding))
         }
     }
 }

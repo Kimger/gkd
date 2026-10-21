@@ -1,6 +1,27 @@
 package li.gkd.app.ui.subscription
 
+import li.gkd.app.ui.component.GkTriggerCount
+import li.gkd.app.record.TriggerSummary
+import li.gkd.app.state.Loadable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import li.gkd.app.ui.component.GkTriStateSwitch
+import li.gkd.app.ui.icon.ResetSettings
+import li.gkd.app.resources.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,21 +46,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import li.gkd.app.model.ExcludeData
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.config_loading
-import li.gkd.app.resources.dialog_close
-import li.gkd.app.resources.rule_content
-import li.gkd.app.resources.rule_delete
-import li.gkd.app.resources.rule_edit
-import li.gkd.app.resources.rule_enable
-import li.gkd.app.resources.rule_enable_in_app
-import li.gkd.app.resources.rule_key_description
-import li.gkd.app.resources.rule_pre_keys_description
-import li.gkd.app.resources.rule_source
-import li.gkd.app.resources.rule_view_examples
-import li.gkd.app.resources.rule_view_parent_list
-import li.gkd.app.resources.rule_view_source
-import li.gkd.app.resources.subscription_settings
 import li.gkd.app.rule.RuleControlState
 import li.gkd.app.rule.toRuleGroupTarget
 import li.gkd.app.rule.RuleSetting
@@ -69,7 +75,6 @@ import li.gkd.app.ui.share.LocalDarkTheme
 import li.gkd.app.ui.style.JSON5_LARGE_TEXT_THRESHOLD
 import li.gkd.app.ui.style.getJson5AnnotatedString
 import li.gkd.app.ui.style.scaffoldPadding
-import li.gkd.app.ui.text.getSync
 import li.gkd.app.util.copyText
 import org.jetbrains.compose.resources.stringResource
 
@@ -87,7 +92,10 @@ fun GkRuleGroupDialog(
     onClickEdit: () -> Unit = {},
     onClickEditExclude: () -> Unit,
     control: RuleControlState?,
+    triggerStats: Loadable<TriggerSummary>,
     onSettingChange: (RuleSetting) -> Unit,
+    matchAnyApp: Boolean?,
+    onMatchAnyAppChange: (Boolean?) -> Unit,
     onClickDelete: () -> Unit = {},
     sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
 ) {
@@ -127,11 +135,30 @@ fun GkRuleGroupDialog(
         sheetState = sheetState,
         title = title,
         titleContent = {
-            GkGroupNameText(
-                text = title,
-                isGlobal = group is RawSubscription.RawGlobalGroup,
-                style = MaterialTheme.typography.titleMedium,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                GkGroupNameText(
+                    text = title,
+                    modifier = Modifier.weight(1f),
+                    isGlobal = group is RawSubscription.RawGlobalGroup,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                when (triggerStats) {
+                    is Loadable.Ready -> GkTriggerCount(
+                        count = triggerStats.value.count,
+                        lastTriggerTime = triggerStats.value.lastTime,
+                    )
+                    is Loadable.Loading -> Unit
+                    is Loadable.Failure -> Text(
+                        stringResource(Res.string.data_load_failed),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
         },
         subtitle = group.desc?.takeIf { it.isNotBlank() },
         footerLeadingContent = if (category != null) {
@@ -234,11 +261,68 @@ fun GkRuleGroupDialog(
                     ruleControl.show(group.toRuleGroupTarget(subs.id, appId))
                 }
             )
+            if (group is RawSubscription.RawGlobalGroup && appId == null) {
+                DefaultAppScopeSetting(group, matchAnyApp, onMatchAnyAppChange)
+            }
             GkRuleExclusionsCard(excludeData, excludeAppId, onClick = onClickEditExclude)
         }
     }
     if (showSource) {
         RuleSourceDialog(group, onDismissRequest = { showSource = false })
+    }
+}
+
+
+@Composable
+private fun DefaultAppScopeSetting(
+    group: RawSubscription.RawGlobalGroup,
+    matchAnyApp: Boolean?,
+    onChange: (Boolean?) -> Unit,
+) {
+    val subscriptionDefault = group.matchAnyApp ?: true
+    val checked = matchAnyApp ?: subscriptionDefault
+    val title = stringResource(Res.string.global_rule_default_apps)
+    val description = stringResource(when (matchAnyApp) {
+        true -> Res.string.global_rule_default_apps_enabled
+        false -> Res.string.global_rule_default_apps_disabled
+        null -> when (subscriptionDefault) {
+            true -> Res.string.global_rule_default_apps_follow_enabled
+            false -> Res.string.global_rule_default_apps_follow_disabled
+        }
+    })
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().height(IntrinsicSize.Min).heightIn(min = 64.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = title,
+                modifier = Modifier.weight(1f)
+                    .padding(start = 16.dp, end = 8.dp, top = 16.dp, bottom = 16.dp),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            GkIconButton(
+                imageVector = ResetSettings,
+                contentDescription = stringResource(Res.string.settings_reset_default),
+                enabled = matchAnyApp != null,
+                colors = IconButtonDefaults.iconButtonColors(
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+                onClick = { onChange(null) },
+            )
+            GkTriStateSwitch(
+                checked = checked,
+                onCheckedChange = { onChange(checked != true) },
+                modifier = Modifier.width(84.dp).fillMaxHeight().semantics {
+                    contentDescription = title
+                },
+                stateDescription = description,
+            )
+        }
     }
 }
 

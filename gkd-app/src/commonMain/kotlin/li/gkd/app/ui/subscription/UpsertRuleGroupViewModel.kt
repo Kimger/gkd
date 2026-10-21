@@ -6,11 +6,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.withContext
 import li.gkd.app.app.AppInfoRepository
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.add_success
-import li.gkd.app.resources.rule_content_required
-import li.gkd.app.resources.rule_content_unchanged
-import li.gkd.app.resources.update_success
+import li.gkd.app.resources.*
 import li.gkd.app.subscription.RawSubscription
 import li.gkd.app.subscription.SubscriptionException
 import li.gkd.app.subscription.SubscriptionFailureReason
@@ -20,6 +16,7 @@ import li.gkd.app.ui.MainViewModel
 import li.gkd.app.ui.navigation.SubsAppGroupListRoute
 import li.gkd.app.ui.navigation.SubsGlobalGroupListRoute
 import li.gkd.app.ui.navigation.UpsertRuleGroupRoute
+import li.gkd.app.ui.page.EditorActionsState
 import li.gkd.app.ui.state.BaseViewModel
 import li.gkd.app.ui.style.clearJson5TransformationCache
 import li.gkd.app.util.ToastUtils
@@ -33,6 +30,8 @@ data class UpsertRuleGroupUiState(
 class UpsertRuleGroupViewModel(
     val route: UpsertRuleGroupRoute,
 ) : BaseViewModel() {
+    val editorActions = EditorActionsState(scope)
+
     val draft: StateFlow<String?>
         field = MutableStateFlow<String?>(null)
 

@@ -24,21 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.action_clear
-import li.gkd.app.resources.category_custom
-import li.gkd.app.resources.category_delete
-import li.gkd.app.resources.category_disabled_description
-import li.gkd.app.resources.category_edit
-import li.gkd.app.resources.category_enabled_description
-import li.gkd.app.resources.category_follow_subscription
-import li.gkd.app.resources.category_follow_subscription_disabled
-import li.gkd.app.resources.category_follow_subscription_enabled
-import li.gkd.app.resources.category_follow_subscription_unspecified
-import li.gkd.app.resources.category_override_count
-import li.gkd.app.resources.category_override_unaffected
-import li.gkd.app.resources.category_use_group_default
-import li.gkd.app.resources.category_use_group_default_description
+import li.gkd.app.resources.*
 import li.gkd.app.rule.CategorySetting
 import li.gkd.app.subscription.RawSubscription
 import li.gkd.app.ui.component.GkIcon
@@ -48,6 +34,7 @@ import li.gkd.app.ui.component.GkRulePropertyIcon
 import li.gkd.app.ui.component.GkRuleSettingsSheet
 import li.gkd.app.ui.component.GkSwitch
 import li.gkd.app.ui.component.RuleProperty
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
@@ -165,37 +152,27 @@ private fun CategoryDefaultContent(
     }
     Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         CategoryChoice.entries.forEach { choice ->
+            val choiceSetting = when (choice) {
+                CategoryChoice.Subscription -> CategorySetting.FollowSubscription
+                CategoryChoice.Custom -> CategorySetting.fromOverride(customEnabled)
+                CategoryChoice.GroupDefault -> CategorySetting.GroupDefault
+            }
             val selected = when (choice) {
-                CategoryChoice.Subscription -> setting == CategorySetting.FollowSubscription
                 CategoryChoice.Custom -> customSelected
-                CategoryChoice.GroupDefault -> setting == CategorySetting.GroupDefault
+                else -> setting == choiceSetting
             }
-            val label = when (choice) {
-                CategoryChoice.Subscription -> stringResource(Res.string.category_follow_subscription)
-                CategoryChoice.Custom -> stringResource(Res.string.category_custom)
-                CategoryChoice.GroupDefault -> stringResource(Res.string.category_use_group_default)
-            }
+            val label = stringResource(choice.labelResource)
             val description = when (choice) {
                 CategoryChoice.Subscription -> subscriptionDefault
-                CategoryChoice.Custom -> if (customEnabled) stringResource(Res.string.category_enabled_description) else stringResource(
-                    Res.string.category_disabled_description
-                )
-
-                CategoryChoice.GroupDefault -> stringResource(Res.string.category_use_group_default_description)
+                else -> stringResource(choiceSetting.descriptionResource)
             }
             val interaction = if (choice == CategoryChoice.Custom && customSelected) {
                 Modifier.toggleable(value = customEnabled, role = Role.Switch, onValueChange = {
-                    onSelect(if (it) CategorySetting.Enabled else CategorySetting.Disabled)
+                    onSelect(CategorySetting.fromOverride(it))
                 })
             } else {
                 Modifier.selectable(selected = selected, role = Role.RadioButton, onClick = {
-                    onSelect(
-                        when (choice) {
-                            CategoryChoice.Subscription -> CategorySetting.FollowSubscription
-                            CategoryChoice.Custom -> if (customEnabled) CategorySetting.Enabled else CategorySetting.Disabled
-                            CategoryChoice.GroupDefault -> CategorySetting.GroupDefault
-                        }
-                    )
+                    onSelect(choiceSetting)
                 })
             }
             Card(
@@ -220,13 +197,8 @@ private fun CategoryDefaultContent(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            val iconSetting = when (choice) {
-                                CategoryChoice.Subscription -> CategorySetting.FollowSubscription
-                                CategoryChoice.Custom -> if (customEnabled) CategorySetting.Enabled else CategorySetting.Disabled
-                                CategoryChoice.GroupDefault -> CategorySetting.GroupDefault
-                            }
                             GkIcon(
-                                imageVector = iconSetting.icon,
+                                imageVector = choiceSetting.icon,
                                 animateMorph = choice == CategoryChoice.Custom,
                                 modifier = Modifier.size(20.dp),
                                 contentDescription = null,
@@ -259,4 +231,8 @@ private fun CategoryDefaultContent(
     }
 }
 
-private enum class CategoryChoice { Subscription, Custom, GroupDefault }
+private enum class CategoryChoice(val labelResource: StringResource) {
+    Subscription(Res.string.category_follow_subscription),
+    Custom(Res.string.category_custom),
+    GroupDefault(Res.string.category_use_group_default),
+}

@@ -24,7 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import li.gkd.app.ui.component.gkTopAppBarScroll
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -32,28 +32,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import li.gkd.app.crash.CrashData
+import li.gkd.app.error.displayMessage
 import li.gkd.app.network.AppLinks
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.android_version_description
-import li.gkd.app.resources.crash_app_description
-import li.gkd.app.resources.crash_details_collapse
-import li.gkd.app.resources.crash_details_expand
-import li.gkd.app.resources.crash_device_description
-import li.gkd.app.resources.crash_report_delete
-import li.gkd.app.resources.crash_report_delete_confirmation
-import li.gkd.app.resources.crash_report_delete_current
-import li.gkd.app.resources.crash_reports
-import li.gkd.app.resources.crash_reports_clear
-import li.gkd.app.resources.crash_reports_clear_confirmation
-import li.gkd.app.resources.crash_reports_empty
-import li.gkd.app.resources.crash_thread_description
-import li.gkd.app.resources.crash_version_thread
-import li.gkd.app.resources.delete_success
-import li.gkd.app.resources.exception_message_empty
-import li.gkd.app.resources.exception_unknown
-import li.gkd.app.resources.feedback_report
-import li.gkd.app.resources.logs_export
-import li.gkd.app.resources.stack_trace
+import li.gkd.app.resources.*
 import li.gkd.app.state.Loadable
 import li.gkd.app.time.format
 import li.gkd.app.ui.MainViewModel
@@ -72,7 +53,6 @@ import li.gkd.app.ui.style.itemHorizontalPadding
 import li.gkd.app.ui.style.itemVerticalPadding
 import li.gkd.app.ui.style.scaffoldPadding
 import li.gkd.app.ui.style.surfaceCardColors
-import li.gkd.app.ui.text.displayMessage
 import li.gkd.app.util.ToastUtils
 import li.gkd.app.util.copyText
 import org.jetbrains.compose.resources.getString
@@ -120,7 +100,7 @@ fun CrashReportPage() {
     val listState = pageScrollState.listState
     pageScrollState.ResetOnChange(crashDataList.isNotEmpty())
     GkScaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        modifier = Modifier.gkTopAppBarScroll(scrollBehavior),
         topBar = {
             GkTopAppBar(
                 scrollBehavior = scrollBehavior,
@@ -187,9 +167,7 @@ fun CrashReportPage() {
             item(key = "crash-report-footer") {
                 if (crashDataList.isEmpty() && records !is Loadable.Loading) {
                     GkEmptyState(
-                        text =
-                            (records as? Loadable.Failure)?.cause?.message
-                                ?: stringResource(Res.string.crash_reports_empty)
+                        text = stringResource(Res.string.crash_reports_empty)
                     )
                 }
                 GkPageBottomSpace()

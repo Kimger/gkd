@@ -1,6 +1,10 @@
 package li.gkd.app.ui.subscription
 
-import androidx.compose.foundation.layout.Column
+import li.gkd.app.ui.component.GkRuleSortButton
+import li.gkd.app.util.SortUtils
+import li.gkd.app.rule.RuleSort
+import li.gkd.app.rule.toRuleGroupTarget
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
@@ -8,24 +12,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import li.gkd.app.ui.component.gkTopAppBarScroll
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.action_close
-import li.gkd.app.resources.action_delete
-import li.gkd.app.resources.action_enable
-import li.gkd.app.resources.action_notice
-import li.gkd.app.resources.global_rule_batch_setting_confirmation
-import li.gkd.app.resources.global_rules
-import li.gkd.app.resources.rule_add
-import li.gkd.app.resources.rule_delete
-import li.gkd.app.resources.rule_groups_delete_confirmation
-import li.gkd.app.resources.rule_groups_deleted_count
-import li.gkd.app.resources.rules_empty
-import li.gkd.app.resources.rules_no_filter_matches
-import li.gkd.app.resources.selected_rules_changed
-import li.gkd.app.resources.setting_follow_default
+import li.gkd.app.resources.*
 import li.gkd.app.rule.RuleConfigIndex
 import li.gkd.app.rule.RuleSetting
 import li.gkd.app.ui.MainViewModel
@@ -37,14 +27,12 @@ import li.gkd.app.ui.component.GkMultiSelectionActions
 import li.gkd.app.ui.component.GkMultiSelectionTopAppBar
 import li.gkd.app.ui.component.GkPageBottomSpace
 import li.gkd.app.ui.component.GkRuleBatchMenuItems
-import li.gkd.app.ui.component.GkRuleFocusNotice
 import li.gkd.app.ui.component.GkRuleGroupCard
 import li.gkd.app.ui.component.GkScaffold
 import li.gkd.app.ui.component.GkSubscriptionPageContent
 import li.gkd.app.ui.component.GkTwoLineText
 import li.gkd.app.ui.component.animateListItem
 import li.gkd.app.ui.component.rememberListScrollState
-import li.gkd.app.ui.component.rememberMultiSelectionState
 import li.gkd.app.ui.component.rememberRuleControlEnvironment
 import li.gkd.app.ui.component.rememberRuleListFocus
 import li.gkd.app.ui.navigation.SubsGlobalGroupListRoute
@@ -56,6 +44,7 @@ import li.gkd.app.ui.style.scaffoldPadding
 import li.gkd.app.util.ToastUtils
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
+import li.gkd.db.SubscriptionIds
 
 @Composable
 fun SubsGlobalGroupListPage(
@@ -67,24 +56,33 @@ fun SubsGlobalGroupListPage(
 
     val vm = viewModel { SubsGlobalGroupListViewModel(route) }
     val scope = vm.scope
+    val sort by vm.sort.collectAsStateWithLifecycle()
     val environment = rememberRuleControlEnvironment()
     val batchBusy by vm.batchBusyFlow.collectAsStateWithLifecycle()
 
     GkSubscriptionPageContent(vm.uiState, mainVm.navigator::pop) { state ->
         val subs = state.subscription
         val configIndex = remember(state.configs) { RuleConfigIndex(state.configs) }
-        val editable = subsItemId < 0
+        val editable = SubscriptionIds.isLocal(subsItemId)
         val controls = remember(state, environment) {
             subs.globalGroups.associate { group ->
                 group.key to environment.resolve(subs, group, null, state.configs, configIndex)
             }
         }
-        val globalGroups = subs.globalGroups
+        val globalGroups = remember(subs.globalGroups, state.triggerStats, sort) {
+            when (sort) {
+                RuleSort.ByDefault -> subs.globalGroups
+                RuleSort.ByRuleName -> subs.globalGroups.sortedWith { a, b -> SortUtils.collator.compare(a.name, b.name) }
+                RuleSort.ByActionTime -> subs.globalGroups.sortedByDescending { state.triggerStats.group(it.toRuleGroupTarget(subs.id, null)).lastTime ?: 0L }
+                RuleSort.ByTriggerCount -> subs.globalGroups.sortedByDescending { state.triggerStats.group(it.toRuleGroupTarget(subs.id, null)).count }
+            }
+        }
 
-        val selectionState = rememberMultiSelectionState<Int>()
+        val selectionState = vm.selection
+        val selectionSnapshot by selectionState.state.collectAsStateWithLifecycle()
         val selectableKeys = remember(controls) { controls.filterValues { it.canEnable }.keys }
-        val selectedKeys = selectionState.selectedKeys intersect selectableKeys
-        val isSelectedMode = selectionState.active
+        val selectedKeys = selectionSnapshot.selectedKeys intersect selectableKeys
+        val isSelectedMode = selectionSnapshot.active
         LaunchedEffect(selectableKeys) {
             selectionState.retain(selectableKeys)
         }
@@ -127,13 +125,14 @@ fun SubsGlobalGroupListPage(
         val itemKeys = remember(globalGroups) { globalGroups.map { it.key } }
         val focus = rememberRuleListFocus(
             requestKey = focusGroupKey,
+            onTargetMissing = { ToastUtils.show(getString(Res.string.rule_focus_missing)) },
             scrollState = pageScrollState,
             itemKeys = itemKeys,
             targetExists = subs.globalGroups.any { it.key == focusGroupKey },
         )
         pageScrollState.ResetOnChange(globalGroups.isEmpty(), enabled = !focus.pending)
         GkScaffold(
-            modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+            modifier = Modifier.gkTopAppBarScroll(scrollBehavior),
             topBar = {
                 GkMultiSelectionTopAppBar(
                     selectedMode = isSelectedMode,
@@ -149,10 +148,13 @@ fun SubsGlobalGroupListPage(
                         )
                     },
                     actions = { selectedMode ->
+                        if (!selectedMode) GkRuleSortButton(sort, vm::setSort)
                         if (selectedMode) {
                             GkMultiSelectionActions(
-                                selectionState = selectionState,
+                                selected = selectionSnapshot.selectedKeys,
                                 keys = selectableKeys,
+                                onSelectAll = selectionState::selectAll,
+                                onInvert = selectionState::invert,
                                 enabled = !batchBusy,
                             ) { dismiss ->
                                 GkRuleBatchMenuItems(
@@ -215,53 +217,49 @@ fun SubsGlobalGroupListPage(
                 }
             },
         ) { paddingValues ->
-            Column(Modifier.scaffoldPadding(paddingValues)) {
-                if (focus.missing) GkRuleFocusNotice()
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
-                    state = listState,
-                ) {
-                    items(globalGroups, { g -> g.key }) { group ->
-                        GkRuleGroupCard(
-                            modifier = Modifier.animateListItem(),
-                            subs = subs,
-                            appId = null,
-                            group = group,
-                            highlighted = !isSelectedMode && focus.highlightedKey == group.key,
-                            control = controls.getValue(group.key),
-                            onOpen = {
-                                mainVm.showRuleGroup(subs.id, null, group, null)
-                            },
-                            onSettingChange = { setting ->
-                                val request = vm.prepareSwitches(state, setOf(group.key))
-                                scope.launchUi {
-                                    vm.applySwitches(request, setting)
-                                        .failureMessage()?.let { ToastUtils.show(it) }
-                                }
-                            },
-                            isSelectedMode = isSelectedMode,
-                            selectionEnabled = !batchBusy,
-                            isSelected = group.key in selectedKeys,
-                            onLongClick = {
-                                if (!batchBusy) {
-                                    selectionState.select(group.key)
-                                }
-                            },
-                            onSelectedChange = {
-                                selectionState.toggle(group.key)
+            LazyColumn(
+                modifier = Modifier.scaffoldPadding(paddingValues).fillMaxSize(),
+                state = listState,
+            ) {
+                items(globalGroups, { g -> g.key }) { group ->
+                    GkRuleGroupCard(
+                        modifier = Modifier.animateListItem(),
+                        subs = subs,
+                        appId = null,
+                        group = group,
+                            triggerSummary = state.triggerStats.group(group.toRuleGroupTarget(subs.id)),
+                        highlighted = !isSelectedMode && focus.highlightedKey == group.key,
+                        control = controls.getValue(group.key),
+                        onOpen = {
+                            mainVm.showRuleGroup(subs.id, null, group, null)
+                        },
+                        onSettingChange = { setting ->
+                            val request = vm.prepareSwitches(state, setOf(group.key))
+                            scope.launchUi {
+                                vm.applySwitches(request, setting)
+                                    .failureMessage()?.let { ToastUtils.show(it) }
                             }
-                        )
-                    }
-                    item(ListPlaceholder.KEY, ListPlaceholder.TYPE) {
-                        if (globalGroups.isEmpty()) {
-                            GkEmptyState(
-                                text = if (subs.globalGroups.isEmpty()) stringResource(Res.string.rules_empty) else stringResource(
-                                    Res.string.rules_no_filter_matches
-                                )
-                            )
-                        } else {
-                            GkPageBottomSpace()
+                        },
+                        isSelectedMode = isSelectedMode,
+                        selectionEnabled = !batchBusy,
+                        isSelected = group.key in selectedKeys,
+                        onLongClick = {
+                            if (!batchBusy) {
+                                selectionState.select(group.key)
+                            }
+                        },
+                        onSelectedChange = {
+                            selectionState.toggle(group.key)
                         }
+                    )
+                }
+                item(ListPlaceholder.KEY, ListPlaceholder.TYPE) {
+                    if (globalGroups.isEmpty()) {
+                        GkEmptyState(
+                            text = stringResource(Res.string.rules_empty)
+                        )
+                    } else {
+                        GkPageBottomSpace()
                     }
                 }
             }

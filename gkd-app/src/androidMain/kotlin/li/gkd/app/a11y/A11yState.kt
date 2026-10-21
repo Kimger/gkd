@@ -33,7 +33,6 @@ import li.gkd.app.rule.acceptTaskForegroundApp
 import li.gkd.app.rule.canCorrectLauncherReport
 import li.gkd.app.service.updateTopTaskAppId
 import li.gkd.app.settings.SettingsRepository
-import li.gkd.app.ui.rule.statusText
 import li.gkd.app.util.AndroidTarget
 import li.gkd.app.util.Constants
 import li.gkd.app.util.LogUtils

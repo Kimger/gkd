@@ -17,16 +17,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import li.gkd.app.ui.component.gkTopAppBarScroll
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
@@ -35,16 +34,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import li.gkd.app.model.fixedName
 import li.gkd.app.model.isStateChanged
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.action_close
-import li.gkd.app.resources.app_id
-import li.gkd.app.resources.event_data
-import li.gkd.app.resources.event_details
-import li.gkd.app.resources.event_log_title
-import li.gkd.app.resources.event_selector
-import li.gkd.app.resources.event_type_prefix
-import li.gkd.app.resources.event_window_content_changed
-import li.gkd.app.resources.event_window_state_changed
+import li.gkd.app.resources.*
 import li.gkd.app.subscription.SubscriptionJson.toJson5String
 import li.gkd.app.ui.MainViewModel
 import li.gkd.app.ui.component.GkAlertDialog
@@ -78,14 +68,14 @@ fun A11yEventLogPage() {
     val vm = viewModel { A11yEventLogViewModel() }
     val list: LazyPagingItems<A11yEventLog> = vm.pagingDataFlow.collectAsLazyPagingItems()
 
-    var shownEventLog by remember { mutableStateOf<A11yEventLog?>(null) }
+    val shownEventLog by vm.shownEventLog.collectAsStateWithLifecycle()
     val pageScrollState = rememberListScrollState()
     val scrollBehavior = pageScrollState.scrollBehavior
     val listState = pageScrollState.listState
     pageScrollState.ResetOnChange(list.itemCount > 0)
 
     GkScaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        modifier = Modifier.gkTopAppBarScroll(scrollBehavior),
         topBar = {
             GkTopAppBar(
                 scrollBehavior = scrollBehavior,
@@ -113,7 +103,7 @@ fun A11yEventLogPage() {
             appIcon = { GkAppIcon(it, 24.dp) },
             appName = { id, modifier ->
                 GkAppNameText(
-                    id,
+                    appId = id,
                     modifier = modifier,
                     style = MaterialTheme.typography.titleSmall,
                 )
@@ -125,12 +115,12 @@ fun A11yEventLogPage() {
             onOpenApp = { mainVm.navigator.navigate(AppConfigRoute(it)) },
             modifier = Modifier.scaffoldPadding(contentPadding),
         ) { eventLog ->
-            EventLogEntry(eventLog, onClick = { shownEventLog = eventLog })
+            EventLogEntry(eventLog, onClick = { vm.setShownEventLog(eventLog) })
         }
     }
 
     shownEventLog?.let { eventLog ->
-        val onDismissRequest = { shownEventLog = null }
+        val onDismissRequest = { vm.setShownEventLog(null) }
         val dark = LocalDarkTheme.current
         val eventText =
             remember(dark, eventLog.id) {

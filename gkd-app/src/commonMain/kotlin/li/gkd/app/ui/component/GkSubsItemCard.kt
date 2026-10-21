@@ -7,10 +7,12 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -34,33 +36,16 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.author_description
-import li.gkd.app.resources.disabled
-import li.gkd.app.resources.enabled
-import li.gkd.app.resources.file_missing
-import li.gkd.app.resources.loading_progress
-import li.gkd.app.resources.not_selected
-import li.gkd.app.resources.selected
-import li.gkd.app.resources.selection_deselect
-import li.gkd.app.resources.selection_mode_enter
-import li.gkd.app.resources.selection_select
-import li.gkd.app.resources.subscription_details_view
-import li.gkd.app.resources.subscription_id_description
-import li.gkd.app.resources.subscription_numbered_name
-import li.gkd.app.resources.subscription_order_description
-import li.gkd.app.resources.subscription_switch_paused_description
-import li.gkd.app.resources.subscription_version_description
-import li.gkd.app.resources.update_error_detail
-import li.gkd.app.resources.update_time_description
-import li.gkd.app.resources.version_prefixed
+import li.gkd.app.resources.*
 import org.jetbrains.compose.resources.stringResource
+import li.gkd.db.SubscriptionIds
 
 data class SubscriptionCardData(
     val id: Long, val enabled: Boolean, val name: String?, val version: Int = 0,
     val author: String? = null, val globalGroups: Int = 0, val apps: Int = 0,
     val appGroups: Int = 0, val updatedAt: String, val appName: String,
-    val loadError: String? = null, val refreshError: String? = null,
+    val loadError: String? = null, val updateFailed: Boolean = false,
+    val triggerCount: Long = 0,
 )
 
 @Composable
@@ -183,44 +168,57 @@ fun GkSubsItemCard(
                             globalGroups = data.globalGroups,
                             apps = data.apps,
                             appGroups = data.appGroups,
-                        )
+                        ),
+                        triggerCount = data.triggerCount,
                     )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        if (data.id >= 0) {
-                            if (data.author != null) {
+                    SubsStatusLine(data) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (!SubscriptionIds.isLocal(data.id)) {
+                                if (data.author != null) {
+                                    Text(
+                                        modifier = Modifier.weight(1f, fill = false).semantics {
+                                            contentDescription = authorLabel
+                                        },
+                                        text = data.author,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
+                                        style = MaterialTheme.typography.labelSmall,
+                                    )
+                                }
                                 Text(
                                     modifier = Modifier.semantics {
-                                        contentDescription = authorLabel
+                                        contentDescription = versionLabel
                                     },
-                                    text = data.author,
+                                    text = stringResource(Res.string.version_prefixed, data.version),
+                                    maxLines = 1,
+                                    softWrap = false,
                                     style = MaterialTheme.typography.labelSmall,
                                 )
+                            } else {
+                                Text(
+                                    modifier = Modifier.weight(1f, fill = false).clearAndSetSemantics {},
+                                    text = data.appName,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.secondary,
+                                )
                             }
+                            val timeStr = data.updatedAt
                             Text(
                                 modifier = Modifier.semantics {
-                                    contentDescription = versionLabel
+                                    contentDescription = updatedLabel
                                 },
-                                text = stringResource(Res.string.version_prefixed, data.version),
+                                text = timeStr,
+                                maxLines = 1,
+                                softWrap = false,
                                 style = MaterialTheme.typography.labelSmall,
-                            )
-                        } else {
-                            Text(
-                                modifier = Modifier.clearAndSetSemantics {},
-                                text = data.appName,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.secondary,
                             )
                         }
-                        val timeStr = data.updatedAt
-                        Text(
-                            modifier = Modifier.semantics {
-                                contentDescription = updatedLabel
-                            },
-                            text = timeStr,
-                            style = MaterialTheme.typography.labelSmall,
-                        )
                     }
                 } else {
                     Text(
@@ -235,24 +233,19 @@ fun GkSubsItemCard(
                     } else {
                         Color.Unspecified
                     }
-                    Text(
-                        text = data.loadError
-                            ?: if (refreshing) stringResource(Res.string.loading_progress) else stringResource(
-                                Res.string.file_missing
-                            ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = color
-                    )
-                }
-                if (data.refreshError != null) {
-                    Text(
-                        text = stringResource(
-                            Res.string.update_error_detail,
-                            data.refreshError.orEmpty()
-                        ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error
-                    )
+                    SubsStatusLine(data) {
+                        Text(
+                            text = data.loadError
+                                ?: if (refreshing) stringResource(Res.string.loading_progress) else stringResource(
+                                    Res.string.file_missing
+                                ),
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = color
+                        )
+                    }
                 }
             }
             Spacer(modifier = Modifier.width(4.dp))
@@ -269,6 +262,30 @@ fun GkSubsItemCard(
                     checked = matchingEnabled && data.enabled,
                     enabled = matchingEnabled,
                     onCheckedChange = onCheckedChange,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubsStatusLine(data: SubscriptionCardData, content: @Composable () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.weight(1f)) {
+            content()
+        }
+        Spacer(Modifier.width(4.dp))
+        Box(Modifier.size(16.dp)) {
+            if (data.loadError != null || data.updateFailed) {
+                val description = listOfNotNull(
+                    if (data.loadError != null) stringResource(Res.string.subscription_load_failed) else null,
+                    if (data.updateFailed) stringResource(Res.string.subscription_update_failed) else null,
+                ).joinToString(", ")
+                GkIcon(
+                    imageVector = if (data.loadError != null) GkIcons.WarningAmber else GkIcons.SyncProblem,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.error,
+                    contentDescription = description,
                 )
             }
         }

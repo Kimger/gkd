@@ -1,6 +1,7 @@
 import li.gkd.gradle.CollectConsumerProguardRulesTask
 import li.gkd.gradle.ValidateStringResourcesTask
 import li.gkd.gradle.buildProperty
+import li.gkd.gradle.gitInfo
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -26,6 +27,15 @@ tasks.matching { it.name == "prepareComposeResourcesTaskForCommonMain" }.configu
     dependsOn(validateStringResources)
 }
 
+val generateDesktopAppMeta = tasks.register<WriteProperties>("generateDesktopAppMeta") {
+    destinationFile.set(layout.buildDirectory.file("generated/desktopAppMeta/app-meta.properties"))
+    property("versionCode", rootProject.extra["gkdVersionCode"] as Int)
+    property("versionName", rootProject.extra["gkdVersionName"] as String)
+    property("commitId", project.gitInfo.commitId)
+    property("commitTime", project.gitInfo.commitTime)
+    property("tagName", project.gitInfo.tagName.orEmpty())
+}
+
 kotlin {
     android {
         namespace = "li.gkd.app"
@@ -36,6 +46,9 @@ kotlin {
     }
     jvm()
     sourceSets {
+        jvmMain {
+            resources.srcDir(generateDesktopAppMeta.map { it.destinationFile.get().asFile.parentFile })
+        }
         commonMain.dependencies {
             compileOnly(libs.codeorigin)
             api(libs.cmp.resources)
@@ -78,6 +91,7 @@ kotlin {
             api(libs.androidx.lifecycle.service)
             api(libs.compose.activity)
             api(libs.rikka.shizuku.api)
+            api(libs.rikka.shizuku.provider)
             api(libs.lsposed.hiddenapibypass)
             api(libs.google.accompanist.drawablepainter)
             api(libs.androidx.splashscreen)
@@ -157,6 +171,9 @@ compose.desktop.application {
 tasks.withType<JavaExec>().matching { it.name == "run" || it.name == "runRelease" }
     .configureEach {
         systemProperty("gkd.projectRoot", rootProject.projectDir.absolutePath)
+        // Match Gradle's UTF-8 decoder instead of the Windows native output encoding.
+        systemProperty("stdout.encoding", "UTF-8")
+        systemProperty("stderr.encoding", "UTF-8")
     }
 
 if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {

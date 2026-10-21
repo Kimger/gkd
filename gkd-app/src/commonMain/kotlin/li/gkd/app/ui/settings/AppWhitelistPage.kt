@@ -5,10 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.app_whitelist
-import li.gkd.app.resources.unchanged
-import li.gkd.app.resources.update_success
+import li.gkd.app.resources.*
 import li.gkd.app.ui.MainViewModel
 import li.gkd.app.ui.component.GkMultiTextField
 import li.gkd.app.ui.navigation.GkEditor
@@ -17,7 +14,6 @@ import li.gkd.app.ui.platform.UiHost
 import li.gkd.app.ui.platform.hideIme
 import li.gkd.app.ui.platform.inputInsets
 import li.gkd.app.ui.style.scaffoldPadding
-import li.gkd.app.ui.text.getSync
 import li.gkd.app.util.ToastUtils
 import org.jetbrains.compose.resources.stringResource
 
@@ -44,7 +40,7 @@ fun AppWhitelistPage(
         ),
         navigator = mainVm.navigator,
         hideIme = host::hideIme,
-        scope = mainVm.scope,
+        actions = vm.editorActions,
     ) { padding ->
         GkMultiTextField(
             modifier = Modifier.scaffoldPadding(padding),

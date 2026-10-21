@@ -92,8 +92,8 @@ actual fun httpRunning() =
     HttpService.httpServerFlow.collectAsStateWithLifecycle().value != null
 
 @Composable
-actual fun localNetworkIps() =
-    HttpService.localNetworkIpsFlow.collectAsStateWithLifecycle().value
+actual fun httpServerAddresses() =
+    listOf(li.gkd.app.util.Constants.loopbackHost) + HttpService.localNetworkIpsFlow.collectAsStateWithLifecycle().value
 
 @Composable
 actual fun snapshotButtonRunning() =
@@ -110,3 +110,6 @@ actual fun eventMonitorRunning() =
 @Composable
 actual fun trackServiceRunning() =
     TrackService.isRunning.collectAsStateWithLifecycle().value
+
+// The Android service already applies port changes in its lifecycle-owned collector.
+actual fun UiHost.httpServerPortChanged() = Unit

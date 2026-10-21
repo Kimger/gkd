@@ -1,12 +1,19 @@
 package li.gkd.app.rule
 
 import li.gkd.app.model.ExcludeData
+import li.gkd.app.resources.*
 import li.gkd.db.SubsCategoryConfig
 import li.gkd.db.SubsGroupConfig
 import li.gkd.db.SubscriptionConfigSnapshot
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.getString
 
-enum class RuleSetting(val value: Boolean?) {
-    FollowDefault(null), Enabled(true), Disabled(false);
+enum class RuleSetting(val value: Boolean?, val labelResource: StringResource) {
+    FollowDefault(null, Res.string.setting_follow_default),
+    Enabled(true, Res.string.setting_manual_enabled),
+    Disabled(false, Res.string.setting_manual_disabled);
+
+    suspend fun labelText(): String = getString(labelResource)
 
     companion object {
         fun from(value: Boolean?): RuleSetting = when (value) {
@@ -78,12 +85,12 @@ class RuleConfigIndex(configs: SubscriptionConfigSnapshot) {
 data class RuleControlState(
     val setting: RuleSetting,
     val defaultEnabled: Boolean,
-    val defaultSource: RuleEnableSource,
     val scope: RuleControlScope,
     val restrictions: List<RuleRestriction> = emptyList(),
     val canEnable: Boolean = true,
     val limitations: RuleLimitations = RuleLimitations(),
     val blockedApp: Boolean = false,
+    val defaultOffReasons: List<GlobalAppDefaultOffReason> = emptyList(),
 ) {
     val configuredEnabled: Boolean get() = setting.value ?: defaultEnabled
     val available: Boolean get() = configuredEnabled && canEnable && !blockedApp && restrictions.isEmpty()

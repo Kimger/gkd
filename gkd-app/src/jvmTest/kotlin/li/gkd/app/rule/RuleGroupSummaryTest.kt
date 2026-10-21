@@ -14,7 +14,6 @@ import li.gkd.db.SubsItem
 class RuleGroupSummaryTest {
     @Test
     fun summariesAggregateSubscriptionsAndReactToCategoryAndGroupChanges() {
-        val policy = RuleGroupPolicy()
 
         fun sub(id: Long) =
             RawSubscription.parse("""{id:$id,name:'Test',version:1,categories:[{key:1,name:'Example'}],apps:[{id:'app.example',groups:[{key:1,name:'Example rule',rules:[{matches:'*'}]}]}]}""")
@@ -32,7 +31,7 @@ class RuleGroupSummaryTest {
             categories: List<SubsCategoryConfig> = emptyList(),
             groups: List<SubsGroupConfig> = emptyList()
         ) =
-            RuleGroupSummaryBuilder.build(policy, entries, apps, emptyList(), groups, categories)
+            RuleGroupSummaryBuilder.build(entries, apps, emptyList(), groups, categories)
         assertEquals(2, summary().appGroupSize)
         assertEquals(1, summary().appSize)
         assertEquals(
@@ -57,14 +56,13 @@ class RuleGroupSummaryTest {
     }
 
     @Test
-    fun appListProjectionCountsOnlyEnabledGroupsAndKeepsAppsWithoutRules() {
+    fun appListProjectionCountsEnabledAndTotalGroupsAndKeepsAppsWithoutRules() {
         val apps =
             listOf("app.example", "app.empty").map { AppInfo(it, it, 1, "1", false, 0, false, 0) }
         val subscription =
             RawSubscription.parse("""{id:1,name:'Test',version:1,apps:[{id:'app.example',groups:[{key:1,name:'On',rules:[{matches:'*'}]},{key:2,name:'Off',rules:[{matches:'*'}]}]}]}""")
         val summary =
             RuleGroupSummaryBuilder.build(
-                RuleGroupPolicy(),
                 listOf(UsedSubsEntry(SubsItem(id = 1, enable = true, order = 0), subscription)),
                 apps.associateBy { it.id },
                 emptyList(),
@@ -73,9 +71,10 @@ class RuleGroupSummaryTest {
             )
         val source = AppListSources.build(
             apps, listOf("app.empty"), listOf("app.empty", "app.example"),
-            mapOf("app.example" to 3), summary.appIdToAllGroups
+            mapOf("app.example" to 3), summary.appIdToAllGroups,
         )
-        assertEquals(1, source.ruleStats.getValue("app.example").appGroups)
+        assertEquals(2, source.ruleStats.getValue("app.example").appGroups)
+        assertEquals(1, source.ruleStats.getValue("app.example").enabledAppGroups)
         assertEquals(3, source.ruleStats.getValue("app.example").globalGroups)
         assertEquals(0, source.ruleStats.getValue("app.empty").appGroups)
         assertEquals(0, source.ruleStats.getValue("app.empty").globalGroups)

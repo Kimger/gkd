@@ -1,16 +1,16 @@
 package li.gkd.app.ui.subscription
 
+import li.gkd.app.rule.RuleSort
+import li.gkd.app.record.TriggerStats
+import li.gkd.db.Db
+import kotlinx.coroutines.flow.combine
+import li.gkd.app.ui.component.MultiSelectionState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import li.gkd.app.app.AppInfoRepository
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.remote_rule_delete_unsupported
-import li.gkd.app.resources.selected_rules_no_copyable
-import li.gkd.app.resources.selected_rules_reselect
-import li.gkd.app.resources.subscription_app_not_loaded
+import li.gkd.app.resources.*
 import li.gkd.app.rule.RuleGroupConfigService
 import li.gkd.app.rule.RuleSetting
 import li.gkd.app.rule.RuleSwitchRequest
@@ -24,19 +24,36 @@ import li.gkd.app.subscription.SubscriptionJson.toJson5String
 import li.gkd.app.subscription.edit
 import li.gkd.app.ui.navigation.SubsAppGroupListRoute
 import li.gkd.app.ui.state.BaseViewModel
-import li.gkd.app.ui.text.getSync
 import li.gkd.db.SubscriptionConfigSnapshot
 import li.gkd.db.SubscriptionConfigStore
+import li.gkd.db.SubscriptionIds
 
 data class SubsAppGroupListUiState(
     val subscription: RawSubscription,
     val app: RawSubscription.RawApp,
     val configs: SubscriptionConfigSnapshot,
+    val triggerStats: TriggerStats,
 )
 
 class SubsAppGroupListViewModel(
     val route: SubsAppGroupListRoute,
 ) : BaseViewModel() {
+    val sort: StateFlow<RuleSort>
+        field = MutableStateFlow(RuleSort.ByDefault)
+
+    fun setSort(value: RuleSort) { sort.value = value }
+
+    val selection = MultiSelectionState<Int>()
+
+    val categorySelection: StateFlow<AppRuleCategorySelection>
+        field = MutableStateFlow(
+            if (route.focusGroupKey == null) AppRuleCategorySelection.All else AppRuleCategorySelection.FocusedRule
+        )
+
+    fun selectCategory(selection: AppRuleCategorySelection) {
+        categorySelection.value = selection
+    }
+
     val showAppSetting: StateFlow<Boolean>
         field = MutableStateFlow(false)
 
@@ -62,7 +79,7 @@ class SubsAppGroupListViewModel(
     private val subscription = RequiredSubscription(route.subsItemId, scope)
 
     val uiState = subscription.buildUiState { rawSubscription ->
-        SubscriptionConfigStore.observe().map { configs ->
+        combine(SubscriptionConfigStore.observe(), Db.ruleTriggerStatsDao.observe(subsId = route.subsItemId, appId = route.appId, groupType = li.gkd.db.RuleGroupType.App)) { configs, records ->
             SubsAppGroupListUiState(
                 subscription = rawSubscription,
                 app = rawSubscription.getApp(
@@ -70,6 +87,7 @@ class SubsAppGroupListViewModel(
                     AppInfoRepository.snapshot?.apps.orEmpty()[route.appId]?.name
                 ),
                 configs = configs,
+                triggerStats = TriggerStats(records),
             )
         }
     }
@@ -104,7 +122,7 @@ class SubsAppGroupListViewModel(
         RuleGroupConfigService.apply(request, setting)
 
     suspend fun deleteSelectedGroups(selectedKeys: Set<Int>): Int {
-        check(route.subsItemId < 0) { Res.string.remote_rule_delete_unsupported.getSync() }
+        check(SubscriptionIds.isLocal(route.subsItemId)) { Res.string.remote_rule_delete_unsupported.getSync() }
         var deletedSize = 0
         subscription.update { current ->
             current.edit {
@@ -115,5 +133,18 @@ class SubsAppGroupListViewModel(
             }
         }
         return deletedSize
+    }
+
+    suspend fun reorderGroups(keys: List<Int>) {
+        check(SubscriptionIds.isLocal(route.subsItemId))
+        subscription.update { current ->
+            current.edit {
+                updateApp(route.appId) {
+                    val byKey = groups.associateBy { it.key }
+                    val orderedKeys = keys.toSet()
+                    copy(groups = keys.mapNotNull(byKey::get) + groups.filter { it.key !in orderedKeys })
+                }
+            }
+        }
     }
 }

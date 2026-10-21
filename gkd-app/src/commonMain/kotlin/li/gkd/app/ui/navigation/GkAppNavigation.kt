@@ -20,6 +20,8 @@ import li.gkd.app.ui.settings.AboutPage
 import li.gkd.app.ui.settings.AdvancedPage
 import li.gkd.app.ui.settings.AppWhitelistPage
 import li.gkd.app.ui.settings.BlockA11yAppListPage
+import li.gkd.app.ui.settings.ExternalCallsPage
+import li.gkd.app.ui.settings.QuickSettingsTilesPage
 import li.gkd.app.ui.settings.WorkModePage
 import li.gkd.app.ui.snapshot.SnapshotPage
 import li.gkd.app.ui.snapshot.SnapshotPreviewPage
@@ -79,6 +81,8 @@ fun GkAppNavigation(
                 AboutRoute -> AboutPage(host)
                 BlockA11ySetupRoute -> BlockA11ySetupPage(host)
                 AdvancedPageRoute -> AdvancedPage(host)
+                ExternalCallsRoute -> ExternalCallsPage()
+                QuickSettingsTilesRoute -> QuickSettingsTilesPage()
                 PrivilegeServiceRoute -> PrivilegeServicePage(host)
                 SnapshotSettingsRoute -> SnapshotSettingsPage(host)
                 CrashReportRoute -> CrashReportPage()

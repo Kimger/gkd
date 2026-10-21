@@ -19,18 +19,19 @@ import li.gkd.app.crash.CrashRecorder
 import li.gkd.app.crash.CrashData
 import li.gkd.app.crash.FileCrashStorage
 import li.gkd.app.network.NetworkClients
+import li.gkd.app.network.inspection.DesktopHttpService
 import li.gkd.app.record.RuntimeRecordRepository
 import li.gkd.app.settings.SettingsRepository
 import li.gkd.app.storage.StorageMaintenance
 import li.gkd.app.storage.appStorage
 import li.gkd.app.subscription.RawSubscription
+import li.gkd.app.subscription.SubscriptionDefaults
 import li.gkd.app.subscription.SubscriptionRepository
 import li.gkd.app.ui.image.ImageLoaders
 import li.gkd.app.ui.component.ToastState
-import li.gkd.app.ui.text.subscriptionDefaults
 import li.gkd.app.util.LogUtils
 import li.gkd.db.Db
-import li.gkd.db.LOCAL_SUBS_ID
+import li.gkd.db.SubscriptionIds
 import li.gkd.db.SubsItem
 import li.gkd.db.initialize
 
@@ -41,8 +42,11 @@ class DesktopRuntime(
     private val scope = applicationScope()
     val appCatalog = DesktopAppCatalog(simulator)
     val toast = ToastState()
+    val httpService = DesktopHttpService(simulator, scope, toast::show)
+    val services = DesktopServiceSimulation(simulator, httpService::setEnabled) { enabled ->
+        SettingsRepository.updateSettings { it.copy(enableStatusService = enabled) }
+    }
     private var pendingCrashData = emptyList<CrashData>()
-    val hasPendingCrashReports get() = pendingCrashData.isNotEmpty()
     val crashInitialization = scope.launch(Dispatchers.IO) {
         pendingCrashData = FileCrashStorage.takePending()
     }
@@ -88,8 +92,8 @@ class DesktopRuntime(
             device = "Desktop " + System.getProperty("os.name"),
             osCode = 0,
             osName = System.getProperty("os.version"),
-            versionCode = DesktopProfile.versionCode.toIntOrNull() ?: 0,
-            versionName = DesktopProfile.versionName
+            versionCode = META.versionCode,
+            versionName = META.versionName
         )
     )
     private val previousCrashHandler = Thread.getDefaultUncaughtExceptionHandler()
@@ -106,6 +110,9 @@ class DesktopRuntime(
             current = this
         }
         AppInfoRepository.initialize()
+        simulator.onServiceRunningChanged = { service, running ->
+            toast.show(service.lifecycleToast(running))
+        }
         simulator.onAppCatalogChanged = { AppInfoRepository.requestRefresh() }
         AppInfoRepository.requestRefresh()
         Thread.setDefaultUncaughtExceptionHandler(crashHandler)
@@ -116,7 +123,7 @@ class DesktopRuntime(
     }
 
     val subscriptionInitialization = scope.launch {
-        SubscriptionRepository.initialize(subscriptionDefaults())
+        SubscriptionRepository.initialize(SubscriptionDefaults.fromResources())
         val imported = DesktopStorage.sessionDirectory.resolve("profile-imported")
         if (!imported.exists()) {
             val existing = Db.subsItemDao.queryAll().mapTo(mutableSetOf()) { it.id }
@@ -125,7 +132,7 @@ class DesktopRuntime(
                 .orEmpty().filter { it.extension == "json" }.forEachIndexed { index, file ->
                     val value =
                         RawSubscription.parse(file.readText(), json5 = false)
-                    if (value.id in existing && value.id != LOCAL_SUBS_ID) return@forEachIndexed
+                    if (value.id in existing && value.id != SubscriptionIds.LOCAL) return@forEachIndexed
                     val enabled = DesktopProfile.subscriptionEnabled[value.id] ?: true
                     SubscriptionRepository.saveWithItem(
                         value,
@@ -150,11 +157,14 @@ class DesktopRuntime(
     }
 
     override fun close() {
+        simulator.onServiceRunningChanged = null
         simulator.onAppCatalogChanged = null
         if (Thread.getDefaultUncaughtExceptionHandler() === crashHandler) Thread.setDefaultUncaughtExceptionHandler(
             previousCrashHandler
         )
         try {
+            httpService.close()
+            services.close()
             runBlocking {
                 try {
                     RuntimeRecordRepository.flush()

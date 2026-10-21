@@ -1,6 +1,7 @@
 package li.gkd.app
 
 import androidx.lifecycle.ViewModelStore
+import androidx.compose.runtime.snapshots.Snapshot
 import java.io.File
 import java.io.IOException
 import java.util.zip.ZipEntry
@@ -14,8 +15,11 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
@@ -23,9 +27,8 @@ import li.gkd.app.backup.BackupManager
 import li.gkd.app.crash.assertCrashReports
 import li.gkd.app.model.AppInfo
 import li.gkd.app.model.AppInventory
-import li.gkd.app.network.assertInspectionProtocol
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.network_unavailable
+import li.gkd.app.network.inspection.assertInspectionProtocol
+import li.gkd.app.resources.*
 import li.gkd.app.settings.SettingsRepository
 import li.gkd.app.settings.SettingsRepositoryChecks
 import li.gkd.app.state.Loadable
@@ -41,13 +44,19 @@ import li.gkd.app.ui.home.BottomNavItem
 import li.gkd.app.ui.home.HomeState
 import li.gkd.app.ui.home.HomeViewModel
 import li.gkd.app.ui.navigation.AboutRoute
+import li.gkd.app.ui.navigation.ActionLogRoute
 import li.gkd.app.ui.navigation.AppConfigRoute
 import li.gkd.app.ui.navigation.HomeRoute
 import li.gkd.app.ui.navigation.SnapshotPageRoute
 import li.gkd.app.ui.subscription.AppConfigViewModel
+import li.gkd.app.ui.subscription.ActionLogViewModel
 import li.gkd.app.ui.update.UpdateStatus
 import li.gkd.app.util.LogUtils
 import li.gkd.db.Db
+import li.gkd.db.ActionLog
+import li.gkd.db.RuleGroupType
+import li.gkd.db.SubscriptionIds
+import li.gkd.db.SubsItem
 import li.gkd.db.SubscriptionConfigStore
 import org.jetbrains.compose.resources.getString
 
@@ -86,10 +95,12 @@ class ApplicationIntegrationTest {
             store.resolve("store.json")
                 .writeText("""{"appGroupType":7,"enableDynamicColor":false,"futureOption":123}""")
             store.resolve("overlay_position.json").writeText("""{"legacy":[12,34]}""")
+            // Explicit rejection keeps the acceptance persistence and failed-write checks active.
+            store.resolve("terms_accepted.txt").writeText("false")
             // An Android recovery file without a database row must keep its user-supplied name.
             val subscriptions = DesktopStorage.data.resolve("files/subscription").apply { mkdirs() }
-            subscriptions.resolve("${li.gkd.db.LOCAL_SUBS_ID}.json.bak").writeText(
-                """{"id":${li.gkd.db.LOCAL_SUBS_ID},"name":"My saved rules","version":7}"""
+            subscriptions.resolve("${SubscriptionIds.LOCAL}.json.bak").writeText(
+                """{"id":${SubscriptionIds.LOCAL},"name":"My saved rules","version":7}"""
             )
             val profile = DesktopProfile
             assertEquals(setOf("example.blocked"), profile.blocked)
@@ -113,18 +124,23 @@ class ApplicationIntegrationTest {
                 assertTrue(appStorage().subscription.resolve("92.json").isFile)
                 assertPlatformInputs(runtime.simulator)
                 assertSubscriptionCreationNames()
+                li.gkd.app.subscription.assertUpdateErrorDismissal(runtime.simulator)
                 assertHomeLifecycle()
+                assertActionLogSubscriptionLoadFailure()
                 assertRootNavigationLifecycle(runtime)
                 assertAppRuleParentVisibility()
-                SettingsRepositoryChecks.run(appStorage().store, profile.appName)
+                assertAppRuleReorderPersistence()
+                SettingsRepositoryChecks.run(appStorage().store, META.appName)
                 li.gkd.app.network.assertUpdateClient(session.resolve("update-client"))
                 assertIgnoredVersionsRetry(runtime.toast)
                 assertCrashReports()
                 assertCookiePersistence(appStorage().privateStore)
+                li.gkd.app.external.assertExternalCalls()
                 li.gkd.app.rule.RuleSwitchPolicyTest()
                     .requestRejectsChangedSwitchesButAcceptsConcurrentPageAndOtherAppEdits()
                 li.gkd.app.snapshot.SnapshotCaptureRepositoryTest(appStorage()).runAll()
                 li.gkd.app.snapshot.SnapshotStoreTest(appStorage()).runAll()
+                li.gkd.app.snapshot.assertSnapshotSharing(appStorage())
                 DesktopAppCatalogTest().profileReloadUsesSharedSelectionAndRecoversFromCorruptFile(
                     profileDir
                 )
@@ -133,9 +149,10 @@ class ApplicationIntegrationTest {
                     archiveContainsMaterialsAndExpiredCacheIsCleanedByMaintenance()
                     materialFailurePreservesCauseAndLeavesFilesForCacheMaintenance()
                 }
+                li.gkd.app.backup.assertBackupSnapshotConsistency()
                 assertBackupRoundTrip(appStorage())
             }
-            assertFailsWith<IllegalStateException> { li.gkd.app.network.isNetworkAvailable() }
+            assertFailsWith<IllegalStateException> { li.gkd.app.network.isNetworkRequestAllowed() }
             assertFailsWith<IllegalStateException> { li.gkd.app.app.openAppCatalog() }
             val logs = appStorage().log.listFiles()!!.associate { it.name to it.readText() }
             LogUtils.d("log-after-close")
@@ -191,8 +208,8 @@ class ApplicationIntegrationTest {
     }
 
     private suspend fun assertSubscriptionCreationNames() {
-        val localId = li.gkd.db.LOCAL_SUBS_ID
-        val memoryId = li.gkd.db.LOCAL_HTTP_SUBS_ID
+        val localId = SubscriptionIds.LOCAL
+        val memoryId = SubscriptionIds.LOCAL_HTTP
         assertEquals("My saved rules", SubscriptionRepository.awaitSnapshot().subscriptions.getValue(localId).name)
         val localFile = appStorage().subscription.resolve("$localId.json")
         val originalBytes = localFile.readBytes()
@@ -231,13 +248,17 @@ class ApplicationIntegrationTest {
         val file = appStorage().store.resolve("ignore_version_list.json")
         val previous = file.takeIf { it.exists() }?.readBytes()
         val initialRevision = toast.revision
-        assertFalse(li.gkd.app.network.isNetworkAvailable())
+        assertFalse(li.gkd.app.network.isNetworkRequestAllowed())
         val networkUnavailable = getString(Res.string.network_unavailable)
+        // This headless runtime has no composition to dispatch global snapshot changes.
+        val snapshotChanges = Channel<Unit>(Channel.CONFLATED)
+        val observer = Snapshot.registerGlobalWriteObserver { snapshotChanges.trySend(Unit) }
+        val notificationJob = launch(Dispatchers.Main) {
+            for (change in snapshotChanges) Snapshot.sendApplyNotifications()
+        }
         try {
             file.writeText("invalid-json")
-            val update = UpdateStatus(
-                this, 1, "test",
-            )
+            val update = UpdateStatus(this)
             suspend fun checkManually() {
                 val previousRevision = toast.revision
                 update.checkUpdate(manual = true)
@@ -264,6 +285,9 @@ class ApplicationIntegrationTest {
             assertEquals("[10,20]", file.readText())
             assertEquals(initialRevision + 3, toast.revision)
         } finally {
+            observer.dispose()
+            snapshotChanges.close()
+            notificationJob.cancel()
             if (file.isDirectory) check(file.delete())
             if (previous == null) file.delete() else file.writeBytes(previous)
         }
@@ -301,6 +325,55 @@ class ApplicationIntegrationTest {
         } finally {
             blocked.delete()
             store.save(original)
+        }
+    }
+
+    // Reordering persists array positions while preserving keys, order values and latest content.
+    private suspend fun assertAppRuleReorderPersistence() {
+        val id = SubscriptionIds.LOCAL
+        val previous = SubscriptionRepository.awaitSnapshot().subscriptions.getValue(id)
+        val original = RawSubscription.parse(
+            """{id:$id,name:'Reorder',version:1,apps:[{id:'test.alpha',groups:[
+                {key:1,name:'First',order:9,rules:[{order:7,matches:'[text="Ad"]'}]},
+                {key:2,name:'Second',order:-3,rules:[{matches:'[text="Ad"]'}]},
+                {key:3,name:'Third',rules:[{matches:'[text="Ad"]'}]}
+            ]}]}"""
+        )
+        val owner = ViewModelStore()
+        try {
+            SubscriptionRepository.update(id) { original }
+            val vm = li.gkd.app.ui.subscription.SubsAppGroupListViewModel(
+                li.gkd.app.ui.navigation.SubsAppGroupListRoute(id, "test.alpha")
+            ).also { owner.put("reorder", it) }
+            withTimeout(5_000) { vm.uiState.first { it is Loadable.Ready } }
+            // A content edit after the drag snapshot must survive saving the requested keys.
+            SubscriptionRepository.update(id) { current ->
+                current.copy(apps = current.apps.map { app ->
+                    app.copy(groups = app.groups.map { if (it.key == 2) it.copy(name = "Edited") else it })
+                })
+            }
+            val beforeReorder = SubscriptionRepository.awaitSnapshot().subscriptions.getValue(id)
+            vm.reorderGroups(listOf(3, 1, 2))
+            val saved = SubscriptionRepository.files.load(id)
+            val expectedGroups = original.apps.single().groups.let {
+                listOf(it[2], it[0], it[1].copy(name = "Edited"))
+            }
+            assertEquals(
+                Json.encodeToString(beforeReorder.copy(
+                    version = beforeReorder.version + 1,
+                    apps = listOf(original.apps.single().copy(groups = expectedGroups)),
+                )),
+                Json.encodeToString(saved),
+            )
+            assertEquals(
+                Json.encodeToString(saved),
+                Json.encodeToString(SubscriptionRepository.awaitSnapshot().subscriptions.getValue(id)),
+            )
+            vm.reorderGroups(listOf(2, 3, 1))
+            assertEquals(listOf(2, 3, 1), SubscriptionRepository.files.load(id).apps.single().groups.map { it.key })
+        } finally {
+            owner.clear()
+            SubscriptionRepository.update(id) { previous }
         }
     }
 
@@ -402,6 +475,50 @@ class ApplicationIntegrationTest {
             assertFailsWith<IllegalStateException> { MainViewModel.requireCurrent() }
         }
 
+    /** A corrupt subscription must show a load failure, while an absent one is confirmed missing. */
+    private suspend fun assertActionLogSubscriptionLoadFailure() {
+        val id = -900003L
+        val owner = ViewModelStore()
+        try {
+            SubscriptionRepository.files.restore(id, "invalid-json".toByteArray())
+            Db.subsItemDao.upsert(SubsItem(id = id, order = 102))
+            SubscriptionRepository.refresh(id)
+            val failure = SubscriptionRepository.awaitSnapshot().loadErrors.getValue(id)
+            val vm = ActionLogViewModel(ActionLogRoute()).also { owner.put("action-log", it) }
+            val log = ActionLog(
+                ctime = 0,
+                appId = "test.alpha",
+                subsId = id,
+                subsVersion = 1,
+                groupKey = 1,
+                groupType = RuleGroupType.App,
+                ruleIndex = 0,
+            )
+            vm.showActionLog(log)
+            val failed = withTimeout(5_000) {
+                vm.dialogStateFlow.first { it?.loadState is Loadable.Failure }
+            }!!
+            assertTrue((failed.loadState as Loadable.Failure).cause === failure)
+            assertEquals(null, failed.subscription)
+
+            vm.showActionLog(log.copy(subsId = id - 1))
+            val missing = withTimeout(5_000) {
+                vm.dialogStateFlow.first { it?.actionLog?.subsId == id - 1 && it.loadState is Loadable.Ready }
+            }!!
+            assertEquals(null, missing.subscription)
+            assertEquals(null, missing.group)
+
+            vm.showActionLog(log.copy(subsId = 13))
+            val ready = withTimeout(5_000) {
+                vm.dialogStateFlow.first { it?.actionLog?.subsId == 13L && it.loadState is Loadable.Ready }
+            }!!
+            assertNotNull(ready.subscription)
+        } finally {
+            owner.clear()
+            SubscriptionRepository.delete(id)
+        }
+    }
+
     private suspend fun assertHomeLifecycle() {
         val owner = ViewModelStore()
         val originalPowerWarning = SettingsRepository.settings.value.subsPowerWarn
@@ -409,6 +526,18 @@ class ApplicationIntegrationTest {
         val second = li.gkd.db.SubsItem(id = 900002, order = 101)
         try {
             val vm = HomeViewModel().also { owner.put("home", it) }
+            // A retained page keeps selection; both user and host tab changes clear it.
+            vm.homeState.selectTab(BottomNavItem.SubsManage)
+            vm.selection.select(first.id)
+            vm.homeState.clickTab(BottomNavItem.SubsManage)
+            assertEquals(setOf(first.id), vm.selection.state.value.selectedKeys)
+            assertEquals(setOf(first.id), (owner["home"] as HomeViewModel).selection.state.value.selectedKeys)
+            vm.homeState.clickTab(BottomNavItem.Settings)
+            assertFalse(vm.selection.state.value.active)
+            vm.homeState.selectTab(BottomNavItem.SubsManage)
+            vm.selection.select(second.id)
+            vm.homeState.selectTab(BottomNavItem.AppList)
+            assertFalse(vm.selection.state.value.active)
             withTimeout(5_000) { vm.appsState.first { it.value?.apps?.size == 2 } }
             withTimeout(5_000) { vm.latestState.first { it is li.gkd.app.state.Loadable.Ready } }
             withTimeout(5_000) { vm.subscriptionsState.first { it is li.gkd.app.state.Loadable.Ready } }

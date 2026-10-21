@@ -1,5 +1,6 @@
 package li.gkd.app.ui.home
 
+import li.gkd.app.META
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -10,33 +11,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import li.gkd.app.ui.component.gkTopAppBarScroll
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.a11y_label
-import li.gkd.app.resources.a11y_whitelist_open
-import li.gkd.app.resources.about_title
-import li.gkd.app.resources.action_continue
-import li.gkd.app.resources.action_toast
-import li.gkd.app.resources.action_toast_style_system
-import li.gkd.app.resources.advanced_settings
-import li.gkd.app.resources.backup_restore
-import li.gkd.app.resources.dynamic_colors
-import li.gkd.app.resources.hide_from_recents
-import li.gkd.app.resources.hide_from_recents_description
-import li.gkd.app.resources.hide_from_recents_warning
-import li.gkd.app.resources.notification_text
-import li.gkd.app.resources.partial_disable_setup_open
-import li.gkd.app.resources.privilege_service_disconnected
-import li.gkd.app.resources.service_partial_disable
-import li.gkd.app.resources.service_partial_disable_description
-import li.gkd.app.resources.settings_appearance
-import li.gkd.app.resources.settings_general
-import li.gkd.app.resources.settings_other
-import li.gkd.app.resources.theme_mode
-import li.gkd.app.resources.turned_off
-import li.gkd.app.resources.whitelist_title
+import li.gkd.app.notif.formatNotificationTemplate
+import li.gkd.app.resources.*
 import li.gkd.app.rule.ruleGroupState
 import li.gkd.app.settings.SettingsRepository
 import li.gkd.app.ui.MainViewModel
@@ -53,12 +32,12 @@ import li.gkd.app.ui.navigation.BlockA11yAppListRoute
 import li.gkd.app.ui.navigation.BlockA11ySetupRoute
 import li.gkd.app.ui.navigation.NotificationTextRoute
 import li.gkd.app.ui.option.DarkThemeOption
-import li.gkd.app.ui.option.findOption
+import li.gkd.app.model.findOption
+import li.gkd.app.ui.page.BackupDialog
 import li.gkd.app.ui.page.GkBackupDialogs
 import li.gkd.app.ui.platform.UiHost
 import li.gkd.app.ui.platform.dynamicColorAvailable
 import li.gkd.app.ui.platform.privilegeAvailable
-import li.gkd.app.ui.settings.appVersion
 import li.gkd.app.ui.share.launchUi
 import li.gkd.app.ui.style.titleItemPadding
 import org.jetbrains.compose.resources.getString
@@ -71,16 +50,17 @@ fun settingsPage(
 ): ScaffoldExt {
     val mainVm = MainViewModel.requireCurrent()
     val scope = rememberCoroutineScope()
-    val appName = appVersion().appName
+    val appName = META.appName
     val store by SettingsRepository.settings.collectAsStateWithLifecycle()
     val privilegeAvailable = privilegeAvailable()
-    val showBackup by vm.showBackup.collectAsStateWithLifecycle()
+    val backupDialog by vm.backupDialog.collectAsStateWithLifecycle()
     GkBackupDialogs(
-        showBackup,
-        { vm.setShowBackup(false) },
-        host::importAppBackup,
-        host::shareAppBackup,
-        host::saveAppBackup,
+        dialog = backupDialog,
+        onDismiss = { vm.setBackupDialog(null) },
+        onExport = { vm.setBackupDialog(BackupDialog.Export) },
+        onImport = host::importAppBackup,
+        onShare = host::shareAppBackup,
+        onSaveDownloads = host::saveAppBackup,
     )
     fun setExcludeFromRecents(enabled: Boolean) {
         scope.launchUi {
@@ -99,7 +79,7 @@ fun settingsPage(
     ResetPageScrollOnRequest(vm.homeState, BottomNavItem.Settings, scroll::resetScrollAndAwait)
     return ScaffoldExt(
         BottomNavItem.Settings,
-        modifier = Modifier.nestedScroll(scroll.scrollBehavior.nestedScrollConnection),
+        modifier = Modifier.gkTopAppBarScroll(scroll.scrollBehavior),
         topBar = {
             GkTopAppBar(
                 scrollBehavior = scroll.scrollBehavior,
@@ -136,7 +116,7 @@ fun settingsPage(
                 val groups = rules.value?.groups
                 val summary = dashboardSummary(rules, count)
                 fun format(text: String) =
-                    HomeDataText.format(
+                    formatNotificationTemplate(
                         text,
                         groups?.globalGroups?.size,
                         groups?.appSize,
@@ -244,7 +224,7 @@ fun settingsPage(
                 GkSettingItem(
                     title = stringResource(Res.string.backup_restore),
                     onClick = {
-                        { vm.setShowBackup(true) }()
+                        vm.setBackupDialog(BackupDialog.Main)
                     },
                 )
 

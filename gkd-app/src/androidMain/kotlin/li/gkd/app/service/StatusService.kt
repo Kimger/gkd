@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import li.gkd.app.META
 import li.gkd.app.a11y.useA11yServiceEnabledFlow
@@ -21,20 +22,10 @@ import li.gkd.app.platform.overlay.KeepAliveOverlayCoordinator
 import li.gkd.app.priv.PrivilegeServiceStatus
 import li.gkd.app.priv.privilegeServiceStatusFlow
 import li.gkd.app.priv.uiAutomationFlow
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.a11y_fault
-import li.gkd.app.resources.a11y_stopped
-import li.gkd.app.resources.a11y_unauthorized
-import li.gkd.app.resources.automation_stopped
-import li.gkd.app.resources.permission_restricted_reauthorize
-import li.gkd.app.resources.persistent_notification
-import li.gkd.app.resources.privilege_service_connection_lost
-import li.gkd.app.resources.rule_matching_pause
-import li.gkd.app.resources.service_partially_disabled_detail
+import li.gkd.app.resources.*
+import li.gkd.app.rule.RuleSummary
 import li.gkd.app.settings.SettingsRepository.actionCount
 import li.gkd.app.settings.SettingsRepository.settings
-import li.gkd.app.ui.share.statusText
-import li.gkd.app.ui.text.getSync
 import li.gkd.app.util.IntentUtils
 import org.jetbrains.compose.resources.getString
 import kotlin.time.Duration.Companion.milliseconds
@@ -96,7 +87,7 @@ class StatusService : LifecycleHookService() {
                 defaultStatusNotification.uri
             )
         } else {
-            Triple(title, ruleSummary.statusText(count), defaultStatusNotification.uri)
+            Triple(title, RuleSummary.statusText(ruleSummary, count), defaultStatusNotification.uri)
         }
     }
 
@@ -104,7 +95,7 @@ class StatusService : LifecycleHookService() {
         useServicePresence(
             stateFlow = isRunning,
             name = Res.string.persistent_notification.getSync(),
-            startToastDelayMillis = if (app.justStarted) 1000 else 0,
+            showStartToast = !app.justStarted,
         )
         onCreated {
             if (!defaultStatusNotification.startForeground()) return@onCreated
@@ -112,11 +103,17 @@ class StatusService : LifecycleHookService() {
                 combine(
                     A11yService.isRunning,
                     KeepAliveOverlayCoordinator.accessibilityAttached,
-                ) { a11yRunning, a11yOverlayAttached ->
-                    a11yRunning to a11yOverlayAttached
+                    settings.map { it.enableStatusOverlay }.distinctUntilChanged(),
+                ) { a11yRunning, a11yOverlayAttached, overlayEnabled ->
+                    Triple(a11yRunning, a11yOverlayAttached, overlayEnabled)
                 }.distinctUntilChanged().collectLatest {
-                    val (a11yRunning, a11yOverlayAttached) = it
-                    if (a11yRunning && a11yOverlayAttached) {
+                    val (a11yRunning, a11yOverlayAttached, overlayEnabled) = it
+                    if (!overlayEnabled) {
+                        KeepAliveOverlayCoordinator.release(
+                            source = KeepAliveOverlayCoordinator.Source.Status,
+                            owner = this@StatusService,
+                        )
+                    } else if (a11yRunning && a11yOverlayAttached) {
                         KeepAliveOverlayCoordinator.releaseAfterHandoff(
                             source = KeepAliveOverlayCoordinator.Source.Status,
                             owner = this@StatusService,

@@ -21,17 +21,9 @@ import li.gkd.app.a11y.A11yRuntime
 import li.gkd.app.appScope
 import li.gkd.app.automation.RemoteAutomationControl
 import li.gkd.app.record.RuntimeRecordRepository
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.automation_partially_disabled
-import li.gkd.app.resources.automation_permission_restricted
-import li.gkd.app.resources.automation_service_occupied
-import li.gkd.app.resources.automation_start_failed
-import li.gkd.app.resources.automation_started
-import li.gkd.app.resources.automation_state_check_failed
-import li.gkd.app.resources.automation_stopped
+import li.gkd.app.resources.*
 import li.gkd.app.store.AppStore.updateEnableAutomator
-import li.gkd.app.ui.option.AutomatorModeOption
-import li.gkd.app.ui.text.getSync
+import li.gkd.app.settings.AutomatorMode
 import li.gkd.app.util.AndroidTarget
 import li.gkd.app.util.LogUtils
 import li.gkd.app.util.SystemServiceDump
@@ -41,7 +33,7 @@ import li.gkd.app.util.launchLogged
 class AutomationService private constructor(
     private val privilegeContext: PrivilegeContext,
 ) : A11yCommonImpl {
-    override val mode get() = AutomatorModeOption.AutomationMode
+    override val mode get() = AutomatorMode.Automation
     private val handlerThread = HandlerThread("UiAutomatorHandlerThread")
     private val uiAutomationDelegate = lazy {
         UiAutomationHidden(

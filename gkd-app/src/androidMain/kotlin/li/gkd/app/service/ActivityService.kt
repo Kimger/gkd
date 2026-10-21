@@ -1,7 +1,6 @@
 package li.gkd.app.service
 
 import li.gkd.app.util.copyText
-
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -40,13 +39,10 @@ import li.gkd.app.a11y.updateTopActivity
 import li.gkd.app.notif.NotificationCatalog
 import li.gkd.app.permission.PermissionStates
 import li.gkd.app.priv.privilegeContextFlow
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.activity_record_service
-import li.gkd.app.resources.activity_record_service_no_permission
+import li.gkd.app.resources.*
 import li.gkd.app.ui.component.GkIcon
 import li.gkd.app.ui.component.GkIcons
 import li.gkd.app.ui.style.iconTextSize
-import li.gkd.app.ui.text.getSync
 import li.gkd.app.util.IntentUtils
 
 class ActivityService : OverlayWindowService(

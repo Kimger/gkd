@@ -1,5 +1,6 @@
 package li.gkd.app.priv
 
+import android.content.Intent
 import android.os.Process
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -9,18 +10,12 @@ import kotlinx.coroutines.withContext
 import li.gkd.app.app
 import li.gkd.app.appScope
 import li.gkd.app.permission.PermissionStates
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.privilege_service_connect_success
-import li.gkd.app.resources.privilege_service_connecting
-import li.gkd.app.resources.privilege_service_disconnected
-import li.gkd.app.resources.privilege_service_state_update_failed
-import li.gkd.app.service.ExposeService
+import li.gkd.app.resources.*
 import li.gkd.app.service.StatusService
 import li.gkd.app.service.currentAppBlocked
 import li.gkd.app.service.currentAppUseA11y
 import li.gkd.app.service.updateTopTaskAppId
 import li.gkd.app.settings.SettingsRepository
-import li.gkd.app.ui.text.getSync
 import li.gkd.app.util.AndroidStorage
 import li.gkd.app.util.LogUtils
 import li.gkd.app.util.ToastUtils
@@ -59,11 +54,12 @@ private suspend fun updatePrivilegeContext(serverInfo: PrivilegeServerInfo?) =
         if (oldContext?.serverInfo == serverInfo) return@withContext
 
         if (serverInfo != null) {
+            val showToast = !app.justStarted
             if (oldContext != null) {
                 clearPrivilegeContext(oldContext)
             }
 
-            if (!app.justStarted) {
+            if (showToast) {
                 ToastUtils.show(Res.string.privilege_service_connecting.getSync())
             }
             val userServiceConnection = Privilege.bindUserService(userServiceSpec)
@@ -83,14 +79,12 @@ private suspend fun updatePrivilegeContext(serverInfo: PrivilegeServerInfo?) =
             PermissionStates.refreshAll()
             if (StatusService.needRestart) {
                 privilegeContext.startForegroundService(
-                    ExposeService.exposeIntent(expose = ExposeService.ACTION_START_STATUS),
+                    Intent(app, StatusService::class.java),
                 )
             }
-            val delayMillis = if (app.justStarted) 1200L else 0L
-            ToastUtils.show(
-                Res.string.privilege_service_connect_success.getSync(),
-                delayMillis = delayMillis
-            )
+            if (showToast) {
+                ToastUtils.show(Res.string.privilege_service_connect_success.getSync())
+            }
         } else if (oldContext != null) {
             clearPrivilegeContext(oldContext)
             PermissionStates.refreshAll()

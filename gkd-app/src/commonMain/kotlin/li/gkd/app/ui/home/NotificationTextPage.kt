@@ -24,22 +24,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.notification_body_label
-import li.gkd.app.resources.notification_template_variables
-import li.gkd.app.resources.notification_template_variables_hint
-import li.gkd.app.resources.notification_text
-import li.gkd.app.resources.notification_text_custom
-import li.gkd.app.resources.notification_text_preview
-import li.gkd.app.resources.notification_text_preview_hint
-import li.gkd.app.resources.notification_title_label
-import li.gkd.app.resources.notification_variable_app_rules
-import li.gkd.app.resources.notification_variable_apps
-import li.gkd.app.resources.notification_variable_global_rules
-import li.gkd.app.resources.notification_variable_triggers
-import li.gkd.app.resources.progress_fraction
-import li.gkd.app.resources.template_text_input_hint
-import li.gkd.app.resources.update_success
+import li.gkd.app.notif.formatNotificationTemplate
+import li.gkd.app.resources.*
 import li.gkd.app.rule.ruleGroupState
 import li.gkd.app.settings.SettingsRepository
 import li.gkd.app.ui.MainViewModel
@@ -50,7 +36,6 @@ import li.gkd.app.ui.navigation.GkEditor
 import li.gkd.app.ui.page.EditorSession
 import li.gkd.app.ui.platform.UiHost
 import li.gkd.app.ui.platform.hideIme
-import li.gkd.app.ui.text.getSync
 import li.gkd.app.util.ToastUtils
 import org.jetbrains.compose.resources.stringResource
 
@@ -64,7 +49,7 @@ fun NotificationTextPage(
     val count by SettingsRepository.actionCount.collectAsStateWithLifecycle()
     val groups = rules.value?.groups
     val renderPreview: (String) -> String = { text ->
-        HomeDataText.format(
+        formatNotificationTemplate(
             text,
             groups?.globalGroups?.size,
             groups?.appSize,
@@ -89,7 +74,7 @@ fun NotificationTextPage(
         ),
         navigator = mainVm.navigator,
         hideIme = host::hideIme,
-        scope = mainVm.scope,
+        actions = vm.editorActions,
     ) { padding ->
         Column(
             modifier =

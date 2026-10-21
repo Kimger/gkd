@@ -14,23 +14,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import li.gkd.app.ui.component.gkTopAppBarScroll
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.app_rules
-import li.gkd.app.resources.app_search_hint
-import li.gkd.app.resources.rules_empty
-import li.gkd.app.resources.search_clear
-import li.gkd.app.resources.search_close
-import li.gkd.app.resources.search_no_results
-import li.gkd.app.resources.search_no_results_filter_hint
-import li.gkd.app.resources.search_open
-import li.gkd.app.resources.subscription_app_switch_batch_confirmation
-import li.gkd.app.resources.subscription_app_switch_set
-import li.gkd.app.resources.subscription_load_failed
+import li.gkd.app.error.messageResource
+import li.gkd.app.resources.*
 import li.gkd.app.rule.RuleConfigIndex
 import li.gkd.app.rule.RuleSetting
 import li.gkd.app.settings.SettingsRepository
@@ -54,7 +44,6 @@ import li.gkd.app.ui.component.GkSubsAppCard
 import li.gkd.app.ui.component.GkTwoLineText
 import li.gkd.app.ui.component.autoFocus
 import li.gkd.app.ui.component.rememberListScrollState
-import li.gkd.app.ui.component.rememberMultiSelectionState
 import li.gkd.app.ui.component.rememberRuleControlEnvironment
 import li.gkd.app.ui.home.rememberVisitOrder
 import li.gkd.app.ui.icon.GkSearchCloseIconButton
@@ -62,19 +51,18 @@ import li.gkd.app.ui.image.GkAppIcon
 import li.gkd.app.ui.navigation.SubsAppGroupListRoute
 import li.gkd.app.ui.navigation.SubsAppListRoute
 import li.gkd.app.ui.navigation.UpsertRuleGroupRoute
-import li.gkd.app.ui.option.AppSortOption
-import li.gkd.app.ui.option.findOption
+import li.gkd.app.app.AppSort
+import li.gkd.app.model.findOption
 import li.gkd.app.ui.platform.GkBackHandler
 import li.gkd.app.ui.platform.UiHost
 import li.gkd.app.ui.platform.hideIme
 import li.gkd.app.ui.share.ListPlaceholder
 import li.gkd.app.ui.share.launchUi
 import li.gkd.app.ui.style.scaffoldPadding
-import li.gkd.app.ui.text.subscriptionMessageResource
 import li.gkd.app.util.ToastUtils
-import li.gkd.db.LOCAL_SUBS_IDS
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
+import li.gkd.db.SubscriptionIds
 
 @Composable
 fun SubsAppListPage(
@@ -118,8 +106,9 @@ fun SubsAppListPage(
             visits.value.orEmpty(),
             environment.blockedApps,
             { it.subsAppGroupType },
-            { AppSortOption.objects.findOption(it.subsAppSort) },
+            { AppSort.options.findOption(it.subsAppSort) },
             { it.subsAppShowBlock },
+            triggerCounts = state?.triggerStats?.byApp.orEmpty().mapValues { it.value.count },
         )
     }
     val apps = remember(sortedApps, searchStr, appInfoMap) {
@@ -128,14 +117,17 @@ fun SubsAppListPage(
                 .contains(searchStr, true)
         }
     }
-    val selection = rememberMultiSelectionState<String>()
+    val selection = vm.selection
+    val selectionSnapshot by selection.state.collectAsStateWithLifecycle()
     val visibleTargets = apps.mapTo(mutableSetOf()) { it.id }
-    val selected = selection.selectedKeys intersect visibleTargets
-    LaunchedEffect(visibleTargets) { selection.retain(visibleTargets) }
-    GkBackHandler(showSearchBar && !selection.active) {
+    val selected = selectionSnapshot.selectedKeys intersect visibleTargets
+    LaunchedEffect(visibleTargets, loadableState) {
+        if (loadableState is Loadable.Ready) selection.retain(visibleTargets)
+    }
+    GkBackHandler(showSearchBar && !selectionSnapshot.active) {
         if (!host.hideIme()) closeSearch()
     }
-    GkBackHandler(selection.active) { if (!busy) selection.clear() }
+    GkBackHandler(selectionSnapshot.active) { if (!busy) selection.clear() }
     val updateSelected: (RuleSetting) -> Unit = { setting ->
         val request = vm.prepareSwitches(checkNotNull(state), selected)
         scope.launchUi {
@@ -162,10 +154,10 @@ fun SubsAppListPage(
     var expanded by remember { mutableStateOf(false) }
 
     GkScaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        modifier = Modifier.gkTopAppBarScroll(scrollBehavior),
         topBar = {
             GkMultiSelectionTopAppBar(
-                selectedMode = selection.active, selectedCount = selected.size,
+                selectedMode = selectionSnapshot.active, selectedCount = selected.size,
                 onExitSelection = selection::clear,
                 onNavigateBack = { if (showSearchBar) closeSearch() else mainVm.navigator.pop() },
                 onTitleClick = if (showSearchBar) null else pageScrollState::resetScroll,
@@ -189,7 +181,7 @@ fun SubsAppListPage(
                     }
                 }, actions = { selectedMode ->
                     if (selectedMode) {
-                        GkMultiSelectionActions(selection, visibleTargets, !busy) { dismiss ->
+                        GkMultiSelectionActions(selectionSnapshot.selectedKeys, visibleTargets, selection::selectAll, selection::invert, !busy) { dismiss ->
                             GkRuleBatchMenuItems(!busy, dismiss, updateSelected)
                         }
                     } else {
@@ -230,7 +222,7 @@ fun SubsAppListPage(
                 })
         },
         floatingActionButton = {
-            if (LOCAL_SUBS_IDS.contains(subsItemId) && !selection.active) {
+            if (SubscriptionIds.isLocal(subsItemId) && !selectionSnapshot.active) {
                 FloatingActionButton(onClick = {
                     mainVm.navigator.navigate(
                         UpsertRuleGroupRoute(
@@ -269,13 +261,14 @@ fun SubsAppListPage(
                     subsId = subsItemId,
                     rawApp = app,
                     enabledGroupCount = enabledGroupCount,
+                    triggerSummary = state?.triggerStats?.app(app.id),
                     appInfo = appInfoMap[app.id],
                     control = environment.app(
                         subsItemId, app.id, checkNotNull(state).configs,
                         checkNotNull(configIndex)
                     ),
                     selectionEnabled = !busy,
-                    selectedMode = selection.active,
+                    selectedMode = selectionSnapshot.active,
                     selected = app.id in selected,
                     onLongClick = {
                         if (!busy) {
@@ -302,7 +295,7 @@ fun SubsAppListPage(
                 if (apps.isEmpty() && !firstLoading) {
                     GkEmptyState(
                         text = if (loadError != null) {
-                            loadError.subscriptionMessageResource() ?: stringResource(Res.string.subscription_load_failed)
+                            loadError.messageResource()
                         } else if (searchStr.isNotEmpty()) {
                             if (showAllApps) stringResource(Res.string.search_no_results) else stringResource(
                                 Res.string.search_no_results_filter_hint

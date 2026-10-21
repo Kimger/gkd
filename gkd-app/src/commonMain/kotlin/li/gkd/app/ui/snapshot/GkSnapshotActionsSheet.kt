@@ -34,15 +34,7 @@ import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import li.gkd.app.app.ActivityNames.getShowActivityId
 import li.gkd.app.network.AppLinks
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.action_delete
-import li.gkd.app.resources.action_save_to_album
-import li.gkd.app.resources.action_save_to_downloads
-import li.gkd.app.resources.action_share
-import li.gkd.app.resources.link_copy
-import li.gkd.app.resources.snapshot_generate_link
-import li.gkd.app.resources.snapshot_replace_screenshot
-import li.gkd.app.resources.snapshot_replace_screenshot_description
+import li.gkd.app.resources.*
 import li.gkd.app.time.format
 import li.gkd.app.ui.component.GkAppNameText
 import li.gkd.app.ui.component.GkFixedTimeText
@@ -61,6 +53,7 @@ fun GkSnapshotActionsSheet(
     sheetState: SheetState,
     onDismissRequest: () -> Unit,
     onShare: () -> Unit,
+    shareEnabled: Boolean,
     onSaveToDownloads: () -> Unit,
     onUpload: () -> Unit,
     onSaveToAlbum: () -> Unit,
@@ -104,6 +97,7 @@ fun GkSnapshotActionsSheet(
             SnapshotActionRow(
                 icon = GkIcons.Share,
                 title = stringResource(Res.string.action_share),
+                enabled = shareEnabled,
                 onClick = { perform(onShare) },
             )
             SnapshotActionRow(
@@ -203,11 +197,12 @@ private fun SnapshotActionRow(
     onClick: () -> Unit,
     subtitle: String? = null,
     trailingText: String? = null,
+    enabled: Boolean = true,
 ) {
-    val contentColor = MaterialTheme.colorScheme.onSurface
+    val contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.38f)
     Row(
         modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium)
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .heightIn(min = if (subtitle == null) 48.dp else 56.dp)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,

@@ -20,26 +20,21 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import li.gkd.app.META
+import li.gkd.app.error.displayMessage
 import li.gkd.app.network.NewVersion
 import li.gkd.app.network.UpdateClient
-import li.gkd.app.network.isNetworkAvailable
+import li.gkd.app.network.isNetworkRequestAllowed
 import li.gkd.app.platform.PlatformResult
 import li.gkd.app.platform.requestPackageInstall
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.download_abort
-import li.gkd.app.resources.network_unavailable
-import li.gkd.app.resources.platform_action_unsupported
-import li.gkd.app.resources.update_version_ignored
-import li.gkd.app.resources.updates_none
+import li.gkd.app.resources.*
 import li.gkd.app.settings.FileSettingsStorage
 import li.gkd.app.settings.SettingsRepository
 import li.gkd.app.storage.appStorage
 import li.gkd.app.ui.component.GkUpgradeDialogs
 import li.gkd.app.ui.component.UpdateDownloadState
-import li.gkd.app.ui.option.UpdateChannelOption
-import li.gkd.app.ui.option.findOption
-import li.gkd.app.ui.text.displayMessage
-import li.gkd.app.ui.text.getSync
+import li.gkd.app.settings.UpdateChannel
+import li.gkd.app.model.findOption
 import li.gkd.app.util.LogUtils
 import li.gkd.app.util.ToastUtils
 import org.jetbrains.compose.resources.getString
@@ -47,8 +42,6 @@ import org.jetbrains.compose.resources.getString
 /** App-owned update workflow; only package installation belongs to the platform. */
 class UpdateStatus(
     private val scope: CoroutineScope,
-    private val versionCode: Int,
-    private val versionName: String,
 ) {
     private val storage by lazy { FileSettingsStorage(appStorage().store) }
     private val directory get() = appStorage().sharedCache
@@ -75,11 +68,11 @@ class UpdateStatus(
             try {
                 lastCheckTime = System.currentTimeMillis()
                 val ignored = ignoreMutex.withLock { withContext(Dispatchers.IO) { readIgnored() } }
-                check(isNetworkAvailable()) { getString(Res.string.network_unavailable) }
+                check(isNetworkRequestAllowed()) { getString(Res.string.network_unavailable) }
                 val url =
-                    UpdateChannelOption.objects.findOption(SettingsRepository.settings.value.updateChannel).url
+                    UpdateChannel.entries.findOption(SettingsRepository.settings.value.updateChannel).url
                 val result = withContext(Dispatchers.IO) { UpdateClient.fetch(url) }
-                if (result.versionCode <= versionCode) {
+                if (result.versionCode <= META.versionCode) {
                     if (manual) ToastUtils.show(getString(Res.string.updates_none))
                 } else if (manual || result.versionCode !in ignored) {
                     lastManual = manual; versionUrl = url; newVersion.value = result
@@ -156,8 +149,8 @@ class UpdateStatus(
         val version by newVersion.collectAsStateWithLifecycle()
         val status by downloadStatus.collectAsStateWithLifecycle()
         val text = version?.let { value ->
-            val logs = value.versionLogs.takeWhile { it.code > versionCode }
-            ("v$versionName -> v${value.versionName}\n\n" + when {
+            val logs = value.versionLogs.takeWhile { it.code > META.versionCode }
+            ("v${META.versionName} -> v${value.versionName}\n\n" + when {
                 logs.size > 1 -> logs.joinToString("\n\n") { "v${it.name}\n${it.desc}" }
                 logs.isNotEmpty() -> logs.first().desc
                 else -> ""

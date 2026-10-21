@@ -24,8 +24,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import li.gkd.app.app.AppInfoRepository
 import li.gkd.app.model.AppInfo
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.app_profile_name
+import li.gkd.app.resources.*
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
@@ -107,7 +106,7 @@ fun GkAppNameText(
 
 @Composable
 fun GkAppNameText(
-    appId: String? = null,
+    appId: String,
     fallbackName: String? = null,
     modifier: Modifier = Modifier,
     style: TextStyle = LocalTextStyle.current,
@@ -118,7 +117,7 @@ fun GkAppNameText(
     val info =
         appInfo ?: catalog?.apps?.get(appId)
     val showSystemIcon = info?.isSystem == true
-    val appName = (info?.name ?: fallbackName ?: appId ?: error("appId is required"))
+    val appName = info?.name ?: fallbackName ?: appId
     val userName = info?.userId?.let { userId ->
         if (userId == catalog?.inventory?.userId) {
             null

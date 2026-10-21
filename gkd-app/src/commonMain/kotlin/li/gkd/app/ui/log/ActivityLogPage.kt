@@ -13,7 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import li.gkd.app.ui.component.gkTopAppBarScroll
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -21,9 +21,7 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import li.gkd.app.app.AppInfoRepository
 import li.gkd.app.model.showActivityId
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.action_log_activity_unknown
-import li.gkd.app.resources.activity_log_title
+import li.gkd.app.resources.*
 import li.gkd.app.time.format
 import li.gkd.app.ui.MainViewModel
 import li.gkd.app.ui.component.GkAppNameText
@@ -55,7 +53,7 @@ fun ActivityLogPage() {
     val scrollBehavior = pageScrollState.scrollBehavior
     pageScrollState.ResetOnChange(list.itemCount > 0)
     GkScaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        modifier = Modifier.gkTopAppBarScroll(scrollBehavior),
         topBar = {
             GkTopAppBar(
                 scrollBehavior = scrollBehavior,
@@ -78,7 +76,7 @@ fun ActivityLogPage() {
             appIcon = { GkAppIcon(it, 24.dp) },
             appName = { id, modifier ->
                 GkAppNameText(
-                    id,
+                    appId = id,
                     modifier = modifier,
                     style = MaterialTheme.typography.titleSmall,
                 )

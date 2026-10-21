@@ -12,13 +12,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import li.gkd.app.notif.NotificationCatalog
 import li.gkd.app.permission.PermissionStates
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.snapshot_button_service
+import li.gkd.app.resources.*
 import li.gkd.app.snapshot.SnapshotCaptureHost
 import li.gkd.app.ui.component.GkIcon
 import li.gkd.app.ui.component.GkIcons
 import li.gkd.app.ui.share.launchUi
-import li.gkd.app.ui.text.getSync
 import li.gkd.app.util.IntentUtils
 
 class ButtonService : OverlayWindowService(

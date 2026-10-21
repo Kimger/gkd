@@ -1,23 +1,17 @@
 package li.gkd.app.ui.subscription
 
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import li.gkd.app.model.ExcludeData
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.rule_missing
+import li.gkd.app.resources.*
 import li.gkd.app.rule.RuleGroupConfigService
 import li.gkd.app.rule.RuleGroupTarget
-import li.gkd.app.rule.RuleSetting
-import li.gkd.app.rule.RuleSwitchTarget
 import li.gkd.app.subscription.RawSubscription
-import li.gkd.app.ui.MainViewModel
 import li.gkd.app.ui.navigation.RuleExcludeEditorRoute
+import li.gkd.app.ui.page.EditorActionsState
 import li.gkd.app.ui.state.BaseViewModel
-import li.gkd.app.ui.text.getSync
-import li.gkd.db.SubscriptionConfigStore
 
 data class RuleExcludeEditorUiState(
     val subscription: RawSubscription,
@@ -25,15 +19,11 @@ data class RuleExcludeEditorUiState(
     val exclude: ExcludeData,
 )
 
-data class RuleExcludeEditorDraft(
-    val subscription: RawSubscription,
-    val expected: ExcludeData,
-    val text: String,
-)
-
 class RuleExcludeEditorViewModel(
     private val route: RuleExcludeEditorRoute,
 ) : BaseViewModel() {
+    val editorActions = EditorActionsState(scope)
+
     val draft: StateFlow<RuleExcludeEditorDraft?>
         field = MutableStateFlow(null)
 
@@ -68,23 +58,6 @@ class RuleExcludeEditorViewModel(
         value: ExcludeData
     ): Boolean =
         saveSession.save {
-            if (value == expected) return@save false
-            if (target is RuleGroupTarget.Global) {
-                val enabledApps = value.appIds.filter { (id, excluded) ->
-                    !excluded && expected.appIds[id] != false
-                }.keys
-                if (enabledApps.isNotEmpty()) {
-                    val request = RuleGroupConfigService.prepare(
-                        enabledApps.map { RuleSwitchTarget.GlobalApp(route.subsId, route.groupKey, it) },
-                        listOf(subscription), SubscriptionConfigStore.capture(),
-                    )
-                    if (!confirmRuleSwitch(request, RuleSetting.Enabled, MainViewModel.requireCurrent().dialogRequests, RuleSwitchHost.GlobalRuleApps)) {
-                        // Keep the draft and allow retry; EditorSaveSession must not record a completed save.
-                        throw CancellationException("Rule enable cancelled")
-                    }
-                }
-            }
-            RuleGroupConfigService.replaceExclude(target, expected, value, subscription)
-            true
+            saveRuleExclusions(target, subscription, expected, value)
         }
 }

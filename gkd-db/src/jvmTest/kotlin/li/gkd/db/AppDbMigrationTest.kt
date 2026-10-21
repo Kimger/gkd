@@ -66,12 +66,67 @@ class AppDbMigrationTest {
     }
 
     @Test
-    fun everyExportedSchemaMigratesToVersion16() = runBlocking {
+    fun everyExportedSchemaMigratesToVersion18() = runBlocking {
         // Protects the persisted schema compatibility contract for every released version.
-        for (startVersion in 1 until 16) {
+        for (startVersion in 1 until 18) {
             val helper = migrationHelper("all-migrations-$startVersion.db")
             helper.createDatabase(startVersion).close()
-            helper.runMigrationsAndValidate(16, listOf(Migration14To15)).close()
+            helper.runMigrationsAndValidate(18, listOf(Migration14To15)).close()
+        }
+    }
+
+    @Test
+    fun migration17To18StartsEmptyWithoutRecountingRetainedLogsAndPersistsNewCounts() = runBlocking {
+        val name = "trigger-statistics.db"
+        val helper = migrationHelper(name)
+        helper.createDatabase(17).use {
+            it.execSQL("INSERT INTO action_log (ctime, app_id, subs_id, subs_version, group_key, group_type, rule_index) VALUES (100, 'app', 7, 1, 2, 2, 0)")
+        }
+        helper.runMigrationsAndValidate(18).close()
+        val db = openDatabase(name)
+        try {
+            assertEquals(1, db.actionLogDao().count().first())
+            assertEquals(emptyList(), db.ruleTriggerStatsDao().observe().first())
+            db.withWriteTransaction {
+                db.ruleTriggerStatsDao().insertIfAbsent(RuleTriggerStats(7, RuleGroupType.App, 2, "app", 0, 200))
+                db.ruleTriggerStatsDao().increment(7, RuleGroupType.App, 2, "app", 200)
+            }
+        } finally {
+            db.close()
+        }
+        val reopened = openDatabase(name)
+        try {
+            assertEquals(RuleTriggerStats(7, RuleGroupType.App, 2, "app", 1, 200), reopened.ruleTriggerStatsDao().observe().first().single())
+        } finally {
+            reopened.close()
+        }
+    }
+
+    @Test
+    fun migration16To17KeepsOverridesAndDefaultsNewScopeToFollowSubscription() = runBlocking {
+        val name = "global-default-apps.db"
+        val helper = migrationHelper(name)
+        helper.createDatabase(16).use {
+            it.execSQL("INSERT INTO subs_item VALUES (7, 1, 2, 1, 1, 0, NULL)")
+            it.execSQL("INSERT INTO subs_global_group_config VALUES (7, 4, 0, '!app.one')")
+        }
+        helper.runMigrationsAndValidate(17).close()
+        val migrated = openDatabase(name)
+        try {
+            val old = SubsGlobalGroupConfig(7, 4, false, "!app.one")
+            assertEquals(old, migrated.subsGlobalGroupConfigDao().getConfig(7, 4))
+            migrated.subsGlobalGroupConfigDao().upsert(old.copy(matchAnyApp = false))
+        } finally {
+            migrated.close()
+        }
+        val reopened = openDatabase(name)
+        try {
+            assertEquals(
+                SubsGlobalGroupConfig(7, 4, false, "!app.one", false),
+                reopened.subsGlobalGroupConfigDao().getConfig(7, 4),
+            )
+        } finally {
+            reopened.close()
         }
     }
 

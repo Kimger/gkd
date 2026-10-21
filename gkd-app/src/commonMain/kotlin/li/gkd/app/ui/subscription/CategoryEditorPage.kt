@@ -36,19 +36,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.action_reload_latest
-import li.gkd.app.resources.add_success
-import li.gkd.app.resources.app_count
-import li.gkd.app.resources.category_add
-import li.gkd.app.resources.category_description
-import li.gkd.app.resources.category_edit
-import li.gkd.app.resources.category_edit_conflict
-import li.gkd.app.resources.category_group_count
-import li.gkd.app.resources.category_name_prefix
-import li.gkd.app.resources.category_no_matching_groups
-import li.gkd.app.resources.unchanged
-import li.gkd.app.resources.update_success
+import li.gkd.app.error.messageResource
+import li.gkd.app.resources.*
 import li.gkd.app.subscription.CategoryPolicy
 import li.gkd.app.subscription.SubscriptionJson.json
 import li.gkd.app.ui.MainViewModel
@@ -62,7 +51,6 @@ import li.gkd.app.ui.navigation.GkEditor
 import li.gkd.app.ui.page.EditorSession
 import li.gkd.app.ui.platform.UiHost
 import li.gkd.app.ui.platform.hideIme
-import li.gkd.app.ui.text.subscriptionMessageResource
 import li.gkd.app.util.ToastUtils
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
@@ -74,7 +62,6 @@ fun CategoryEditorPage(
 ) {
     val mainVm = MainViewModel.requireCurrent()
     val vm = viewModel { CategoryEditorViewModel(route) }
-    val policy = remember { CategoryPolicy() }
     GkSubscriptionPageContent(vm.uiState, mainVm.navigator::pop) { subscription ->
         val category = subscription.categories.find { it.key == route.categoryKey }
         val categorySnapshot = remember(category) { category?.let { json.encodeToString(it) } }
@@ -90,15 +77,15 @@ fun CategoryEditorPage(
         val conflict = route.categoryKey != null && categorySnapshot != draft.originalCategory
         val validation =
             remember(subscription, route.categoryKey, name) {
-                runCatching { policy.validateEdit(subscription, route.categoryKey, name) }
+                runCatching { CategoryPolicy.validateEdit(subscription, route.categoryKey, name) }
             }
         val preview =
             remember(subscription, route.categoryKey, previewName) {
-                runCatching { policy.previewEdit(subscription, route.categoryKey, previewName, "") }
+                runCatching { CategoryPolicy.previewEdit(subscription, route.categoryKey, previewName, "") }
             }
         val error =
             if (conflict) stringResource(Res.string.category_edit_conflict)
-            else validation.exceptionOrNull()?.subscriptionMessageResource()
+            else validation.exceptionOrNull()?.messageResource()
         val previewCategoryKey =
             route.categoryKey ?: preview.getOrNull()?.categories?.maxOfOrNull { it.key }
         val apps =
@@ -135,7 +122,7 @@ fun CategoryEditorPage(
             ),
             navigator = mainVm.navigator,
             hideIme = host::hideIme,
-            scope = mainVm.scope,
+            actions = vm.editorActions,
         ) { padding ->
             Column(
                 modifier =
@@ -212,17 +199,16 @@ fun CategoryEditorPage(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(apps.size.toString(), style = MaterialTheme.typography.bodyMedium)
                             GkIcon(
                                 imageVector = GkIcons.Android,
                                 modifier = Modifier.size(18.dp),
                                 contentDescription =
                                     stringResource(Res.string.app_count, apps.size),
                             )
+                            Text(apps.size.toString(), style = MaterialTheme.typography.bodyMedium)
                             val groupCount = apps.sumOf { it.groups.size }
-                            Text(groupCount.toString(), style = MaterialTheme.typography.bodyMedium)
                             GkIcon(
-                                imageVector = GkIcons.FlashOn,
+                                imageVector = GkIcons.Rule,
                                 modifier = Modifier.size(18.dp),
                                 contentDescription =
                                     stringResource(
@@ -230,6 +216,7 @@ fun CategoryEditorPage(
                                         groupCount,
                                     ),
                             )
+                            Text(groupCount.toString(), style = MaterialTheme.typography.bodyMedium)
                         }
                         LazyColumn(
                             modifier = Modifier.fillMaxWidth().weight(1f),

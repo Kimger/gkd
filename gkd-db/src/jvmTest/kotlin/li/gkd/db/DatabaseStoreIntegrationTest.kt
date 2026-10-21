@@ -16,6 +16,7 @@ class DatabaseStoreIntegrationTest {
         try {
             Db.actionLogDao.count().first()
             SubscriptionConfigStoreChecks().apply {
+                defaultAppScopeSurvivesOtherUpdatesAndResetsWithoutLosingOverrides()
                 explicitAppAndGroupSettingsSurviveChangesToTheirDefaults()
                 resettingAppGateAndGroupSettingsPreservesOtherScopesAndPageExclusions()
                 aFailedMixedScopeTransactionDoesNotLeavePartiallyChangedSwitches()
@@ -29,6 +30,8 @@ class DatabaseStoreIntegrationTest {
                 failedImportDoesNotRollBackANormalWriteWaitingForTheTransaction()
             }
             RuntimeRecordStoreChecks().apply {
+                triggerCountsAreAtomicScopedAndSurviveLogAndSubscriptionDeletion()
+                appFiltersKeepSubscriptionScopeAndIncludeGlobalRuleActions()
                 secondVisitFailureRollsBackFirstVisitAndRetryKeepsNewestValue()
                 actionTrimFailureRollsBackInsertAndRetryDoesNotDuplicate()
                 activityTrimFailureRetainsOldRowsAndRollsBackTheWholeBatch()
@@ -55,7 +58,7 @@ object DatabaseStoreTestSession {
             connection.execSQL("DROP TRIGGER IF EXISTS fail_visit")
             connection.execSQL("DROP TRIGGER IF EXISTS fail_trim")
             listOf("subs_app_config", "subs_category_config", "subs_app_group_config",
-                "subs_global_group_config", "subs_item", "app_last_visit", "action_log", "activity_log")
+                "subs_global_group_config", "subs_item", "app_last_visit", "action_log", "activity_log", "rule_trigger_stats")
                 .forEach { connection.execSQL("DELETE FROM $it") }
         }
     }

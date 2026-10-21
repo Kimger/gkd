@@ -17,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,7 +48,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowState
 import li.gkd.app.ui.component.GkIcons
-import li.gkd.app.ui.icon.Logo
 import java.awt.Rectangle
 import java.awt.BorderLayout
 import java.awt.Dimension
@@ -136,6 +136,10 @@ fun GkDesktopWindowFrame(
             DesktopWindowGeometry.clear(window)
         }
     }
+    val borderArgb = MaterialTheme.colorScheme.surfaceContainer.toArgb()
+    LaunchedEffect(controller, dark, borderArgb) {
+        controller?.updateTheme(dark, borderArgb)
+    }
     val showTitle = controller != null && state.placement != WindowPlacement.Fullscreen
     DisposableEffect(window, frameInitialized, viewportSize, showTitle, density) {
         var disposed = false
@@ -163,6 +167,10 @@ fun GkDesktopWindowFrame(
                     if (!window.isVisible) {
                         window.validate()
                         window.renderImmediately()
+                        // ComposeWindow only renders its own canvas; the caption has a separate scene.
+                        val pane = window.contentPane
+                        ((pane.layout as BorderLayout).getLayoutComponent(BorderLayout.NORTH) as? ComposePanel)
+                            ?.renderImmediately()
                         currentReadyCallback?.invoke()
                     }
                 }
@@ -251,6 +259,7 @@ private fun DesktopTitleHost(
     DisposableEffect(window, controller) {
         val panel = ComposePanel(renderSettings = RenderSettings.SkiaSurface()).apply {
             preferredSize = Dimension(0, 32)
+            background = JavaColor(colors.surfaceContainer.toArgb(), true)
             setContent {
                 MaterialTheme(colorScheme = colors, typography = typography, shapes = shapes) {
                     currentContent()

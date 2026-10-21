@@ -3,6 +3,8 @@ package li.gkd.app.ui.component
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,12 +27,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.details_view
-import li.gkd.app.resources.selection_toggle
+import li.gkd.app.resources.*
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
@@ -42,12 +43,16 @@ fun GkRuleListItem(
     highlighted: Boolean = false,
     selectable: Boolean = true,
     selectionEnabled: Boolean = true,
+    interactionSource: MutableInteractionSource? = null,
+    handlesLongPress: Boolean = true,
     onLongClick: (() -> Unit)? = null,
     onSelect: () -> Unit = {},
     leading: (@Composable () -> Unit)? = null,
-    trailing: @Composable (Modifier) -> Unit,
+    trailing: (@Composable (Modifier) -> Unit)? = null,
+    trailingInfo: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val selectionLabel = stringResource(Res.string.selection_mode_enter)
     val containerColor by animateColorAsState(
         targetValue = if (selected || highlighted) MaterialTheme.colorScheme.primaryContainer
         else MaterialTheme.colorScheme.surfaceContainer,
@@ -66,9 +71,11 @@ fun GkRuleListItem(
                 .then(
                     if (!selectedMode || selectable) {
                         Modifier.combinedClickable(
+                            interactionSource = interactionSource,
+                            indication = LocalIndication.current,
                             enabled = !selectedMode || selectionEnabled,
                             onClick = if (selectedMode) onSelect else onClick,
-                            onLongClick = if (selectable && selectionEnabled) onLongClick else null,
+                            onLongClick = if (handlesLongPress && selectable && selectionEnabled) onLongClick else null,
                             onClickLabel = if (selectedMode) stringResource(Res.string.selection_toggle) else stringResource(
                                 Res.string.details_view
                             ),
@@ -77,11 +84,18 @@ fun GkRuleListItem(
                         Modifier
                     }
                 ).semantics {
+                    if (!handlesLongPress && selectable && selectionEnabled && onLongClick != null) {
+                        this.onLongClick(label = selectionLabel) {
+                            onLongClick()
+                            true
+                        }
+                    }
                     if (selectedMode && selectable) {
                         role = Role.Checkbox
                         this.selected = selected
                     }
-                }.heightIn(min = 64.dp),
+                }.heightIn(min = 64.dp)
+                .padding(end = if (!selectedMode && trailing == null) 8.dp else 0.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(
@@ -92,17 +106,20 @@ fun GkRuleListItem(
                 leading?.invoke()
                 Column(Modifier.weight(1f), content = content)
             }
+            if (!selectedMode) trailingInfo?.invoke()
             // Include the switch's surrounding space in its hit target, up to the card edges.
             // 52 dp switch + 8 dp on either side matches the content inset.
-            Box(Modifier.width(68.dp).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                if (selectedMode) {
-                    if (selectable) GkCheckbox(
-                        selected,
-                        onCheckedChange = null,
-                        enabled = selectionEnabled
-                    )
-                } else {
-                    trailing(Modifier.fillMaxSize())
+            if (selectedMode || trailing != null) {
+                Box(Modifier.width(68.dp).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                    if (selectedMode) {
+                        if (selectable) GkCheckbox(
+                            selected,
+                            onCheckedChange = null,
+                            enabled = selectionEnabled
+                        )
+                    } else {
+                        trailing?.invoke(Modifier.fillMaxSize())
+                    }
                 }
             }
         }

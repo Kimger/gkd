@@ -1,5 +1,6 @@
 package li.gkd.app.ui.settings
 
+import li.gkd.app.META
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -26,43 +27,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import li.gkd.app.ui.component.gkTopAppBarScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import li.gkd.app.network.AppLinks
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.a11y_enable
-import li.gkd.app.resources.a11y_permission_grant
-import li.gkd.app.resources.a11y_permission_ready
-import li.gkd.app.resources.a11y_permission_regrant_description
-import li.gkd.app.resources.a11y_scoped
-import li.gkd.app.resources.action_close
-import li.gkd.app.resources.action_understood
-import li.gkd.app.resources.automation_a11y_description
-import li.gkd.app.resources.automation_no_display_issues
-import li.gkd.app.resources.automation_scope_compatibility_hint
-import li.gkd.app.resources.automation_undetectable_a11y
-import li.gkd.app.resources.help_view
-import li.gkd.app.resources.keep_alive_permission_description
-import li.gkd.app.resources.keep_alive_permission_missing
-import li.gkd.app.resources.keep_alive_setup_add_tile
-import li.gkd.app.resources.keep_alive_setup_heading
-import li.gkd.app.resources.keep_alive_setup_open_tiles
-import li.gkd.app.resources.keep_alive_setup_place_tile
-import li.gkd.app.resources.keep_alive_tile_description
-import li.gkd.app.resources.keep_alive_title
-import li.gkd.app.resources.permission_grant
-import li.gkd.app.resources.privilege_service_connected
-import li.gkd.app.resources.secure_settings_permission_description
-import li.gkd.app.resources.secure_settings_permission_grant
-import li.gkd.app.resources.secure_settings_permission_granted
-import li.gkd.app.resources.settings_go_to
-import li.gkd.app.resources.work_mode_basic
-import li.gkd.app.resources.work_mode_enhanced
-import li.gkd.app.resources.work_mode_title
+import li.gkd.app.resources.*
 import li.gkd.app.settings.SettingsRepository
 import li.gkd.app.ui.MainViewModel
 import li.gkd.app.ui.component.GkAlertDialog
@@ -76,8 +48,8 @@ import li.gkd.app.ui.component.GkTopAppBar
 import li.gkd.app.ui.home.dashboardPlatformState
 import li.gkd.app.ui.navigation.A11YScopeAppListRoute
 import li.gkd.app.ui.navigation.PrivilegeServiceRoute
-import li.gkd.app.ui.option.AutomatorModeOption
-import li.gkd.app.ui.option.findOption
+import li.gkd.app.settings.AutomatorMode
+import li.gkd.app.model.findOption
 import li.gkd.app.ui.platform.RefreshPermissions
 import li.gkd.app.ui.platform.UiHost
 import li.gkd.app.ui.platform.changeAutomatorMode
@@ -93,12 +65,12 @@ fun WorkModePage(host: UiHost) {
     RefreshPermissions()
     val platform = dashboardPlatformState()
     val store by SettingsRepository.settings.collectAsStateWithLifecycle()
-    val automatorMode: AutomatorModeOption =
-        AutomatorModeOption.objects.findOption(store.automatorMode)
+    val automatorMode: AutomatorMode =
+        AutomatorMode.entries.findOption(store.automatorMode)
 
     val onPrivilege: () -> Unit = { mainVm.navigator.navigate(PrivilegeServiceRoute) }
 
-    val appName: String = appVersion().appName
+    val appName: String = META.appName
 
     val automationAvailable =
         platform.privilegeAvailable && platform.privilegeCapabilities?.restricted != true
@@ -166,7 +138,7 @@ fun WorkModePage(host: UiHost) {
     }
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     GkScaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        modifier = Modifier.gkTopAppBarScroll(scrollBehavior),
         topBar = {
             GkTopAppBar(
                 scrollBehavior = scrollBehavior,
@@ -190,7 +162,7 @@ fun WorkModePage(host: UiHost) {
         ) {
             Card(
                 modifier = Modifier.padding(horizontal = itemHorizontalPadding).fillMaxWidth(),
-                onClick = { host.changeAutomatorMode(AutomatorModeOption.A11yMode) },
+                onClick = { host.changeAutomatorMode(AutomatorMode.A11y) },
                 colors = surfaceCardColors,
             ) {
                 Row(
@@ -204,12 +176,12 @@ fun WorkModePage(host: UiHost) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     RadioButton(
-                        selected = automatorMode == AutomatorModeOption.A11yMode,
+                        selected = automatorMode == AutomatorMode.A11y,
                         onClick = null,
                     )
                     Text(
                         modifier = Modifier.padding(start = 12.dp),
-                        text = AutomatorModeOption.A11yMode.label,
+                        text = stringResource(AutomatorMode.A11y.labelResource),
                         style = MaterialTheme.typography.titleMedium,
                     )
                 }
@@ -229,14 +201,7 @@ fun WorkModePage(host: UiHost) {
                 )
                 GkAnimatedBooleanContent(
                     targetState = platform.writeSecureSettings || platform.a11yRunning,
-                    contentTrue = {
-                        Text(
-                            modifier = Modifier.padding(horizontal = 20.dp).padding(top = 8.dp),
-                            text = stringResource(Res.string.a11y_permission_ready),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
+                    contentTrue = {},
                     contentFalse = {
                         FlowRow(
                             modifier =
@@ -276,18 +241,6 @@ fun WorkModePage(host: UiHost) {
                             stringResource(Res.string.secure_settings_permission_description),
                         ),
                 )
-                GkAnimatedBooleanContent(
-                    targetState = platform.writeSecureSettings,
-                    contentTrue = {
-                        Text(
-                            modifier = Modifier.padding(horizontal = 20.dp).padding(top = 8.dp),
-                            text = stringResource(Res.string.secure_settings_permission_granted),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                    contentFalse = {},
-                )
                 FlowRow(
                     modifier = Modifier.padding(horizontal = 20.dp).padding(top = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -309,7 +262,7 @@ fun WorkModePage(host: UiHost) {
                 modifier = Modifier.padding(horizontal = itemHorizontalPadding).fillMaxWidth(),
                 onClick = {
                     if (automationAvailable) {
-                        host.changeAutomatorMode(AutomatorModeOption.AutomationMode)
+                        host.changeAutomatorMode(AutomatorMode.Automation)
                     } else vm.setShowPrivilegeRequired(true)
                 },
                 colors = surfaceCardColors,
@@ -325,12 +278,12 @@ fun WorkModePage(host: UiHost) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     RadioButton(
-                        selected = automatorMode == AutomatorModeOption.AutomationMode,
+                        selected = automatorMode == AutomatorMode.Automation,
                         onClick = null,
                     )
                     Text(
                         modifier = Modifier.padding(start = 12.dp),
-                        text = AutomatorModeOption.AutomationMode.label,
+                        text = stringResource(AutomatorMode.Automation.labelResource),
                         style = MaterialTheme.typography.titleMedium,
                     )
                 }
@@ -344,18 +297,6 @@ fun WorkModePage(host: UiHost) {
                             stringResource(Res.string.automation_undetectable_a11y),
                             stringResource(Res.string.automation_scope_compatibility_hint),
                         ),
-                )
-                GkAnimatedBooleanContent(
-                    targetState = platform.privilegeAvailable,
-                    contentTrue = {
-                        Text(
-                            modifier = Modifier.padding(horizontal = 20.dp).padding(top = 8.dp),
-                            text = stringResource(Res.string.privilege_service_connected),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                    contentFalse = {},
                 )
                 FlowRow(
                     modifier = Modifier.padding(horizontal = 20.dp).padding(top = 8.dp),

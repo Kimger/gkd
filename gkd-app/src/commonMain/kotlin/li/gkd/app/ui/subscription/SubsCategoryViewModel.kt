@@ -1,18 +1,17 @@
 package li.gkd.app.ui.subscription
 
+import li.gkd.app.ui.component.MultiSelectionState
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.category_missing
-import li.gkd.app.rule.CategoryPolicy
+import li.gkd.app.resources.*
 import li.gkd.app.rule.CategorySetting
+import li.gkd.app.rule.RuleGroupPolicy
 import li.gkd.app.rule.RuleGroupConfigService
 import li.gkd.app.state.MutexState
 import li.gkd.app.subscription.RawSubscription
 import li.gkd.app.subscription.SubscriptionRepository
 import li.gkd.app.ui.navigation.SubsCategoryRoute
 import li.gkd.app.ui.state.BaseViewModel
-import li.gkd.app.ui.text.getSync
 import li.gkd.db.SubscriptionConfigStore
 
 data class CategorySummary(
@@ -26,11 +25,15 @@ data class CategorySummary(
 data class SubsCategoryUiState(
     val subscription: RawSubscription,
     val categories: List<CategorySummary>,
+    val uncategorizedApps: List<RawSubscription.RawApp>,
+    val uncategorizedEnabledGroupCount: Int,
 )
 
 class SubsCategoryViewModel(
     route: SubsCategoryRoute,
 ) : BaseViewModel() {
+    val selection = MultiSelectionState<Int>()
+
     private val mutation = MutexState()
     val busyFlow: StateFlow<Boolean> get() = mutation.state
 
@@ -50,6 +53,7 @@ class SubsCategoryViewModel(
     }
 
     val uiState = RequiredSubscription(route.subsItemId, scope).buildUiState { subscription ->
+        val uncategorizedApps = subscription.getCategoryApps(null)
         SubscriptionConfigStore.observe().map { snapshot ->
             val categoryConfigs = snapshot.categoryConfigs.filter { it.subsId == subscription.id }
                 .associateBy { it.categoryKey }
@@ -64,7 +68,7 @@ class SubsCategoryViewModel(
                     groupCount = apps.sumOf { it.groups.size },
                     enabledGroupCount = apps.sumOf { app ->
                         app.groups.count { group ->
-                            RuleGroupConfigService.policy.getGroupEnabled(
+                            RuleGroupPolicy.getGroupEnabled(
                                 group,
                                 groupConfigs[app.id to group.key],
                                 category,
@@ -72,8 +76,12 @@ class SubsCategoryViewModel(
                             )
                         }
                     },
-                    setting = CategoryPolicy.setting(config),
+                    setting = CategorySetting.from(config),
                 )
+            }, uncategorizedApps, uncategorizedApps.sumOf { app ->
+                app.groups.count { group ->
+                    RuleGroupPolicy.getGroupEnabled(group, groupConfigs[app.id to group.key])
+                }
             })
         }
     }

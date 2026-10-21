@@ -91,6 +91,12 @@ data object AboutRoute : AppRoute
 data object AdvancedPageRoute : AppRoute
 
 @Serializable
+data object ExternalCallsRoute : AppRoute
+
+@Serializable
+data object QuickSettingsTilesRoute : AppRoute
+
+@Serializable
 data object WorkModeRoute : AppRoute
 
 @Serializable
@@ -130,7 +136,7 @@ data class SubsAppGroupListRoute(
 data class SubsAppListRoute(val subsItemId: Long) : AppRoute
 
 @Serializable
-data class SubsCategoryGroupRoute(val subsId: Long, val categoryKey: Int) : AppRoute
+data class SubsCategoryGroupRoute(val subsId: Long, val categoryKey: Int?) : AppRoute
 
 @Serializable
 data class SubsCategoryRoute(val subsItemId: Long) : AppRoute

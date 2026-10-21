@@ -1,5 +1,7 @@
 package li.gkd.app.ui.settings
 
+import li.gkd.app.META
+import li.gkd.app.time.format
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -23,32 +25,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import li.gkd.app.ui.component.gkTopAppBarScroll
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import li.gkd.app.error.displayMessage
 import li.gkd.app.network.AppLinks
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.about_easter_egg
-import li.gkd.app.resources.about_title
-import li.gkd.app.resources.action_continue
-import li.gkd.app.resources.action_update
-import li.gkd.app.resources.beta_channel_warning
-import li.gkd.app.resources.donate
-import li.gkd.app.resources.feedback_notice
-import li.gkd.app.resources.feedback_report
-import li.gkd.app.resources.feedback_title
-import li.gkd.app.resources.logs_export
-import li.gkd.app.resources.notice_title
-import li.gkd.app.resources.privacy_policy
-import li.gkd.app.resources.source_code
-import li.gkd.app.resources.terms_of_use
-import li.gkd.app.resources.update_channel
-import li.gkd.app.resources.update_check
-import li.gkd.app.resources.version_channel
+import li.gkd.app.resources.*
 import li.gkd.app.settings.SettingsRepository
 import li.gkd.app.settings.SettingsRepository.settings
 import li.gkd.app.ui.MainViewModel
@@ -62,16 +48,14 @@ import li.gkd.app.ui.component.GkSettingItem
 import li.gkd.app.ui.component.GkTextMenu
 import li.gkd.app.ui.component.GkTopAppBar
 import li.gkd.app.ui.icon.GkAnimatedLogoIcon
-import li.gkd.app.ui.option.UpdateChannelOption
-import li.gkd.app.ui.option.findOption
+import li.gkd.app.settings.UpdateChannel
+import li.gkd.app.model.findOption
 import li.gkd.app.ui.page.GkVersionInfoDialog
 import li.gkd.app.ui.page.feedbackNotice
 import li.gkd.app.ui.platform.UiHost
 import li.gkd.app.ui.share.LocalDarkTheme
 import li.gkd.app.ui.style.itemPadding
 import li.gkd.app.ui.style.titleItemPadding
-import li.gkd.app.ui.text.displayMessage
-import li.gkd.app.ui.text.getSync
 import li.gkd.app.util.ToastUtils
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
@@ -82,7 +66,6 @@ fun AboutPage(
 ) {
     val mainVm = MainViewModel.requireCurrent()
     val vm = viewModel { AboutViewModel() }
-    val version = appVersion()
     val showVersionInfoDialog by vm.showVersionInfoDialog.collectAsStateWithLifecycle()
     val showShareAppDialog by vm.showShareAppDialog.collectAsStateWithLifecycle()
     val store by settings.collectAsStateWithLifecycle()
@@ -103,10 +86,10 @@ fun AboutPage(
             }
         }
     }
-    val updateChannel = UpdateChannelOption.objects.findOption(store.updateChannel)
+    val updateChannel = UpdateChannel.entries.findOption(store.updateChannel)
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     GkScaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        modifier = Modifier.gkTopAppBarScroll(scrollBehavior),
         topBar = {
             GkTopAppBar(
                 scrollBehavior = scrollBehavior,
@@ -156,9 +139,9 @@ fun AboutPage(
                             .padding(horizontal = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text(text = version.appName, style = MaterialTheme.typography.titleMedium)
+                    Text(text = META.appName, style = MaterialTheme.typography.titleMedium)
                     Text(
-                        text = version.versionName,
+                        text = META.versionName,
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -172,7 +155,7 @@ fun AboutPage(
                     mainVm.textDialog.showUrl(AppLinks.Repository)
                 },
             )
-            if (version.isGkdChannel) {
+            if (META.isGkdChannel) {
                 GkSettingItem(
                     imageVector = null,
                     title = stringResource(Res.string.donate),
@@ -229,7 +212,7 @@ fun AboutPage(
                     onOptionChange = { option ->
                         launchAction {
                             if (
-                                option != UpdateChannelOption.Beta ||
+                                option != UpdateChannel.Beta ||
                                     mainVm.dialogRequests.confirm(
                                         title = getString(Res.string.version_channel),
                                         text = getString(Res.string.beta_channel_warning),
@@ -261,12 +244,12 @@ fun AboutPage(
 
     GkVersionInfoDialog(
         showVersionInfoDialog,
-        version.channel,
-        version.versionCode,
-        version.versionName,
-        version.commitLabel,
-        version.commitTime,
-        { mainVm.textDialog.showUrl(version.commitUrl) },
+        META.channel,
+        META.versionCode.toString(),
+        META.versionName,
+        META.tagName ?: META.commitId.take(16),
+        META.commitTime.format("yyyy-MM-dd HH:mm:ss ZZ"),
+        { mainVm.textDialog.showUrl(META.commitUrl) },
         { vm.setShowVersionInfoDialog(false) },
     )
     host.GkShareAppDialog(

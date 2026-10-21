@@ -1,9 +1,11 @@
 package li.gkd.app.ui.home
 
+import li.gkd.app.ui.component.MultiSelectionState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
@@ -19,19 +21,29 @@ import li.gkd.app.state.Loadable
 import li.gkd.app.state.MutexState
 import li.gkd.app.subscription.SubscriptionRepository
 import li.gkd.app.subscription.SubscriptionResult
+import li.gkd.app.ui.page.BackupDialog
 import li.gkd.app.ui.state.BaseViewModel
 import li.gkd.app.ui.subscription.SubsManageUiState
 import li.gkd.db.Db
-import li.gkd.db.LOCAL_SUBS_ID
+import li.gkd.db.SubscriptionIds
 import li.gkd.db.SubsItem
 
 /** Business state owned by the HomeRoute navigation entry. */
 class HomeViewModel : BaseViewModel() {
-    val showBackup: StateFlow<Boolean>
+    val settingsDialogVisible: StateFlow<Boolean>
         field = MutableStateFlow(false)
 
-    fun setShowBackup(value: Boolean) {
-        showBackup.value = value
+    fun setSettingsDialogVisible(value: Boolean) {
+        settingsDialogVisible.value = value
+    }
+
+    val selection = MultiSelectionState<Long>()
+
+    val backupDialog: StateFlow<BackupDialog?>
+        field = MutableStateFlow(null)
+
+    fun setBackupDialog(value: BackupDialog?) {
+        backupDialog.value = value
     }
 
     val showRestrictionDetails: StateFlow<Boolean>
@@ -47,13 +59,13 @@ class HomeViewModel : BaseViewModel() {
     init {
         scope.launch {
             appListState.map { it.search }.distinctUntilChanged().debounce(200).collect { query ->
-                appListState.update { it.copy(query = query) }
+                appListState.update { it.copy(query = query.trim()) }
             }
         }
     }
 
     fun setAppSearchText(value: String) {
-        appListState.update { it.copy(search = value.trim()) }
+        appListState.update { it.copy(search = value) }
     }
 
     fun closeAppSearch() {
@@ -82,7 +94,9 @@ class HomeViewModel : BaseViewModel() {
         }
     }
 
-    val homeState = HomeState()
+    val homeState = HomeState(onTabChanged = { tab ->
+        if (tab != BottomNavItem.SubsManage) selection.clear()
+    })
     val latestState = HomeDataSources.observeLatest().stateInit(Loadable.Loading)
 
     val appsState = AppListSources.observe(
@@ -90,9 +104,10 @@ class HomeViewModel : BaseViewModel() {
         ruleGroupState,
         Db.actionLogDao.queryLatestUniqueAppIds(),
         Db.appLastVisitDao.query(),
+        Db.ruleTriggerStatsDao.observe(),
         globalGroupCounts = { it.groups.appIdToGlobalGroupCount },
         appGroups = { it.groups.appIdToAllGroups },
-    ).catch { emit(Loadable.Failure(it)) }.stateInit(Loadable.Loading)
+    ).stateInit(Loadable.Loading)
 
     private val batchMutex = MutexState()
     val batchBusyFlow: StateFlow<Boolean> get() = batchMutex.state
@@ -109,12 +124,17 @@ class HomeViewModel : BaseViewModel() {
             when (snapshotState) {
                 Loadable.Loading -> flowOf(Loadable.Loading)
                 is Loadable.Failure -> flowOf(snapshotState)
-                is Loadable.Ready -> Db.subsItemDao.query().map { subItems ->
+                is Loadable.Ready -> combine(
+                    Db.subsItemDao.query(),
+                    Db.ruleTriggerStatsDao.observe(),
+                ) { subItems, records ->
                     SubsManageUiState(
                         subItems = subItems,
                         subscriptions = snapshotState.value.subscriptions,
                         loadErrors = snapshotState.value.loadErrors,
                         refreshErrors = snapshotState.value.updateErrors,
+                        triggerCounts = records.groupBy { it.subsId }
+                            .mapValues { (_, rows) -> rows.sumOf { it.triggerCount } },
                     )
                 }.map<SubsManageUiState, Loadable<SubsManageUiState>> { Loadable.Ready(it) }
                     .catch { emit(Loadable.Failure(it)) }
@@ -140,7 +160,7 @@ class HomeViewModel : BaseViewModel() {
     suspend fun refreshSubscriptions() = SubscriptionRepository.refresh()
 
     suspend fun deleteSubscriptions(ids: Set<Long>): SubscriptionResult =
-        SubscriptionRepository.delete(*(ids - LOCAL_SUBS_ID).toLongArray())
+        SubscriptionRepository.delete(*(ids - SubscriptionIds.LOCAL).toLongArray())
 
     suspend fun updateOrder(items: List<SubsItem>) = Db.subsItemDao.batchUpdateOrder(items)
 
@@ -160,8 +180,4 @@ class HomeViewModel : BaseViewModel() {
         SubscriptionRepository.requestEnabled(item.id, true, confirmed = true)
     }
 
-    suspend fun addOrModifySubscription(
-        url: String,
-        oldItem: SubsItem? = null,
-    ): SubscriptionResult = SubscriptionRepository.addOrModifyRemote(url, oldItem)
 }

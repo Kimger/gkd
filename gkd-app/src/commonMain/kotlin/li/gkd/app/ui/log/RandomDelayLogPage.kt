@@ -92,7 +92,7 @@ fun RandomDelayLogPage() {
                         if (id.isEmpty()) {
                             Text(stringResource(Res.string.random_delay_log_unknown_app), modifier)
                         } else {
-                            GkAppNameText(id, modifier = modifier, style = MaterialTheme.typography.titleSmall)
+                            GkAppNameText(appId = id, modifier = modifier, style = MaterialTheme.typography.titleSmall)
                         }
                     },
                     onOpenApp = { if (it.isNotEmpty()) mainVm.navigator.navigate(AppConfigRoute(it)) },

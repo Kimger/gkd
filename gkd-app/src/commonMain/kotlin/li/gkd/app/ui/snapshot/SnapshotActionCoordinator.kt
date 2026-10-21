@@ -3,19 +3,9 @@ package li.gkd.app.ui.snapshot
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import li.gkd.app.error.displayMessage
 import li.gkd.app.platform.PlatformResult
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.delete_success
-import li.gkd.app.resources.platform_action_unsupported
-import li.gkd.app.resources.save_success
-import li.gkd.app.resources.saving_progress
-import li.gkd.app.resources.screenshot_replace_success
-import li.gkd.app.resources.screenshot_size_mismatch
-import li.gkd.app.resources.snapshot_delete
-import li.gkd.app.resources.snapshot_delete_confirmation
-import li.gkd.app.resources.snapshot_generate_link
-import li.gkd.app.resources.snapshot_upload_privacy_warning
-import li.gkd.app.resources.upload_busy
+import li.gkd.app.resources.*
 import li.gkd.app.snapshot.SnapshotStore
 import li.gkd.app.snapshot.platform.saveImageToAlbum
 import li.gkd.app.storage.FileExports
@@ -24,7 +14,6 @@ import li.gkd.app.ui.MainViewModel
 import li.gkd.app.ui.component.DialogRequests
 import li.gkd.app.ui.platform.UiHost
 import li.gkd.app.ui.share.launchUi
-import li.gkd.app.ui.text.displayMessage
 import li.gkd.app.ui.upload.createSnapshotUploadItem
 import li.gkd.app.util.LogUtils
 import li.gkd.app.util.ToastUtils
@@ -42,18 +31,6 @@ class SnapshotActionCoordinator(
     private val onBeforeDelete: () -> Unit,
     private val onDeleteFailed: () -> Unit,
 ) : SnapshotActions {
-
-    override fun share(snapshot: Snapshot) {
-        fileScope.launchUi {
-            // A share target may read the archive after this call returns; cache expiry owns cleanup.
-            val archive =
-                SnapshotStore.createArchive(snapshot.id, snapshot.appId, snapshot.activityId)
-            if (platform.share(archive) == PlatformResult.Unsupported) {
-                SnapshotStore.deleteArchive(archive)
-                ToastUtils.show(getString(Res.string.platform_action_unsupported))
-            }
-        }
-    }
 
     override fun replace(snapshot: Snapshot) {
         fileScope.launchUi {

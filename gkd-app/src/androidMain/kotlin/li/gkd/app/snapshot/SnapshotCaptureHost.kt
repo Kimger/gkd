@@ -21,28 +21,18 @@ import li.gkd.app.app.AppInfoRepository
 import li.gkd.app.data.appinfo.PackageAppCatalog.selfAppInfo
 import li.gkd.app.data.captureNodeInfoList
 import li.gkd.app.data.currentDeviceInfo
+import li.gkd.app.error.displayMessage
 import li.gkd.app.model.ComplexSnapshot
-import li.gkd.app.model.RpcError
+import li.gkd.app.inspection.InspectionException
+import li.gkd.app.inspection.InspectionFailure
 import li.gkd.app.notif.NotificationCatalog
 import li.gkd.app.platform.PlatformResult
 import li.gkd.app.priv.privilegeContextFlow
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.platform_action_unsupported
-import li.gkd.app.resources.screenshot_frame_missing
-import li.gkd.app.resources.screenshot_replace_manually
-import li.gkd.app.resources.service_unavailable_authorize
-import li.gkd.app.resources.snapshot_app_a11y_missing
-import li.gkd.app.resources.snapshot_auto_export_failed
-import li.gkd.app.resources.snapshot_auto_export_permission_denied
-import li.gkd.app.resources.snapshot_save_in_progress
-import li.gkd.app.resources.snapshot_saved
-import li.gkd.app.resources.snapshot_saved_warning
+import li.gkd.app.resources.*
 import li.gkd.app.service.ScreenshotService
 import li.gkd.app.settings.SettingsRepository.settings
 import li.gkd.app.snapshot.platform.encodeSnapshotScreenshot
-import li.gkd.app.ui.option.AutomatorModeOption
-import li.gkd.app.ui.text.displayMessage
-import li.gkd.app.ui.text.getSync
+import li.gkd.app.settings.AutomatorMode
 import li.gkd.app.util.AndroidTarget
 import li.gkd.app.util.BarUtils
 import li.gkd.app.util.LogUtils
@@ -200,7 +190,7 @@ object SnapshotCaptureHost {
 
     private suspend fun captureScreen(
         appId: String,
-        automatorMode: AutomatorModeOption,
+        automatorMode: AutomatorMode,
         forcedCropStatusBar: Boolean,
         hideStatusBar: Boolean,
     ): ScreenResult {
@@ -208,7 +198,7 @@ object SnapshotCaptureHost {
         // 窗口下回调 IWindowManager.captureDisplay 的 listener，读取 buffer 会等待系统 4 秒后超时。
         // 自动化模式先检查窗口标志，命中后跳过特权截图，避免无意义的等待。
         val checkSecureBeforeCapture =
-            automatorMode == AutomatorModeOption.AutomationMode && AndroidTarget.UPSIDE_DOWN_CAKE
+            automatorMode == AutomatorMode.Automation && AndroidTarget.UPSIDE_DOWN_CAKE
         val focusedWindowSecure = if (checkSecureBeforeCapture) {
             queryFocusedWindowSecure(appId)
         } else {
@@ -277,45 +267,41 @@ object SnapshotCaptureHost {
 
     suspend fun capture(forcedCropStatusBar: Boolean = false): ComplexSnapshot {
         val service = A11yRuntime.service
-            ?: throw RpcError(getString(Res.string.service_unavailable_authorize))
+            ?: throw InspectionException(InspectionFailure.AccessibilityAuthorizationRequired)
         val settings = settings.value
-        val captured = try {
-            SnapshotCaptureRepository.capture(settings.autoSaveSnapshotToDownloads) {
-                val rootNode = A11yRuntime.getRoot(service)
-                    ?: throw RpcError(getString(Res.string.snapshot_app_a11y_missing))
-                val appId = rootNode.packageName.toString()
-                val screenHeight = ScreenUtils.getHeight()
-                val screenWidth = ScreenUtils.getWidth()
-                val isLandscape = ScreenUtils.isLandscape()
-                coroutineScope {
-                    val nodes = async(Dispatchers.IO) { captureNodeInfoList(rootNode) }
-                    val activityId = async(Dispatchers.IO) { resolveActivityId(appId) }
-                    val screenshot = async(Dispatchers.Default) {
-                        captureScreen(
-                            appId,
-                            service.mode,
-                            forcedCropStatusBar,
-                            settings.hideSnapshotStatusBar,
-                        )
-                    }
-                    val screen = screenshot.await()
-                    SnapshotCaptureInput(
-                        appId = appId,
-                        activityId = activityId.await(),
-                        screenHeight = screenHeight,
-                        screenWidth = screenWidth,
-                        isLandscape = isLandscape,
-                        nodes = nodes.await(),
-                        appInfo = AppInfoRepository.snapshot?.apps?.get(appId),
-                        gkdAppInfo = selfAppInfo,
-                        device = currentDeviceInfo(),
-                        screenshot = screen.bytes,
-                        screenshotStatus = screen.status,
+        val captured = SnapshotCaptureRepository.capture(settings.autoSaveSnapshotToDownloads) {
+            val rootNode = A11yRuntime.getRoot(service)
+                ?: throw InspectionException(InspectionFailure.SnapshotNodesUnavailable)
+            val appId = rootNode.packageName.toString()
+            val screenHeight = ScreenUtils.getHeight()
+            val screenWidth = ScreenUtils.getWidth()
+            val isLandscape = ScreenUtils.isLandscape()
+            coroutineScope {
+                val nodes = async(Dispatchers.IO) { captureNodeInfoList(rootNode) }
+                val activityId = async(Dispatchers.IO) { resolveActivityId(appId) }
+                val screenshot = async(Dispatchers.Default) {
+                    captureScreen(
+                        appId,
+                        service.mode,
+                        forcedCropStatusBar,
+                        settings.hideSnapshotStatusBar,
                     )
                 }
+                val screen = screenshot.await()
+                SnapshotCaptureInput(
+                    appId = appId,
+                    activityId = activityId.await(),
+                    screenHeight = screenHeight,
+                    screenWidth = screenWidth,
+                    isLandscape = isLandscape,
+                    nodes = nodes.await(),
+                    appInfo = AppInfoRepository.snapshot?.apps?.get(appId),
+                    gkdAppInfo = selfAppInfo,
+                    device = currentDeviceInfo(),
+                    screenshot = screen.bytes,
+                    screenshotStatus = screen.status,
+                )
             }
-        } catch (_: SnapshotCaptureBusyException) {
-            throw RpcError(getString(Res.string.snapshot_save_in_progress))
         }
         val snapshot = captured.snapshot
         val exportDetail = when (val exported = captured.autoExport) {

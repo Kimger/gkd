@@ -1,5 +1,7 @@
 package li.gkd.app.ui.subscription
 
+import li.gkd.app.record.TriggerStats
+import li.gkd.app.ui.component.MultiSelectionState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -11,7 +13,7 @@ import li.gkd.app.settings.SettingsRepository
 import li.gkd.app.state.MutexState
 import li.gkd.app.subscription.RawSubscription
 import li.gkd.app.ui.navigation.SubsAppListRoute
-import li.gkd.app.ui.option.AppSortOption
+import li.gkd.app.app.AppSort
 import li.gkd.app.ui.state.BaseViewModel
 import li.gkd.db.Db
 import li.gkd.db.SubscriptionConfigSnapshot
@@ -21,11 +23,14 @@ data class SubsAppListUiState(
     val subscription: RawSubscription,
     val configs: SubscriptionConfigSnapshot,
     val appActionOrder: Map<String, Int>,
+    val triggerStats: TriggerStats,
 )
 
 class SubsAppListViewModel(
     val route: SubsAppListRoute,
 ) : BaseViewModel() {
+    val selection = MultiSelectionState<String>()
+
     val searchStr: StateFlow<String>
         field = MutableStateFlow("")
 
@@ -49,13 +54,14 @@ class SubsAppListViewModel(
     val uiState = RequiredSubscription(route.subsItemId, scope).buildUiState { subscription ->
         combine(
             SubscriptionConfigStore.observe(),
-            Db.actionLogDao.queryLatestUniqueAppIds(route.subsItemId)
-        ) { configs, ids ->
-            SubsAppListUiState(subscription, configs, ids.mapIndexed { i, id -> id to i }.toMap())
+            Db.actionLogDao.queryLatestUniqueAppIds(route.subsItemId),
+            Db.ruleTriggerStatsDao.observe(subsId = route.subsItemId, groupType = li.gkd.db.RuleGroupType.App)
+        ) { configs, ids, records ->
+            SubsAppListUiState(subscription, configs, ids.mapIndexed { i, id -> id to i }.toMap(), TriggerStats(records))
         }
     }
 
-    fun setSortType(value: AppSortOption) {
+    fun setSortType(value: AppSort) {
         SettingsRepository.updateSettings { it.copy(subsAppSort = value.value) }
     }
 

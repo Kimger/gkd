@@ -1,5 +1,10 @@
 package li.gkd.app.ui.subscription
 
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
+import li.gkd.app.record.TriggerSummary
+import li.gkd.app.record.summarizeTriggers
+import li.gkd.db.Db
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -9,12 +14,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import li.gkd.app.model.ExcludeData
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.app_rule_missing
-import li.gkd.app.resources.delete_named_confirmation
-import li.gkd.app.resources.delete_success
-import li.gkd.app.resources.rule_delete
-import li.gkd.app.resources.rule_missing
+import li.gkd.db.SubsGlobalGroupConfig
+import li.gkd.app.resources.*
 import li.gkd.app.rule.RuleControlState
 import li.gkd.app.rule.RuleGroupConfigService
 import li.gkd.app.rule.RuleGroupConfiguration
@@ -35,7 +36,6 @@ import li.gkd.app.ui.navigation.SubsGlobalGroupExcludeRoute
 import li.gkd.app.ui.navigation.UpsertRuleGroupRoute
 import li.gkd.app.ui.share.DeletionTarget
 import li.gkd.app.ui.share.launchUi
-import li.gkd.app.ui.text.getSync
 import li.gkd.app.util.ToastUtils
 
 private data class RuleSheetSnapshot(
@@ -44,6 +44,7 @@ private data class RuleSheetSnapshot(
     val group: RawSubscription.RawGroupProps,
     val configuration: RuleGroupConfiguration,
     val control: RuleControlState,
+    val triggerStats: Loadable<TriggerSummary>,
 )
 
 class RuleGroupState(
@@ -124,6 +125,15 @@ class RuleGroupState(
         }
         val configuration =
             key(requested) { configurationFlow.collectAsStateWithLifecycle(null).value }
+        val statsFlow = remember(target) {
+            if (target == null) flowOf<Loadable<TriggerSummary>>(Loadable.Loading)
+            else Db.ruleTriggerStatsDao.observe(
+                subsId = target.subsId, appId = target.pageAppId,
+                groupType = target.groupType, groupKey = target.groupKey,
+            ).map<List<li.gkd.db.RuleTriggerStats>, Loadable<TriggerSummary>> { Loadable.Ready(it.summarizeTriggers()) }
+                .catch { emit(Loadable.Failure(it)) }
+        }
+        val stats = key(requested) { statsFlow.collectAsStateWithLifecycle(Loadable.Loading).value }
         val snapshot =
             if (target != null && subscription != null && group != null && configuration != null) {
                 RuleSheetSnapshot(
@@ -133,7 +143,8 @@ class RuleGroupState(
                         group,
                         target.pageAppId,
                         configuration.snapshot
-                    )
+                    ),
+                    stats
                 )
             } else null
         GkRetainedSheet(
@@ -160,6 +171,15 @@ class RuleGroupState(
                 excludeAppId = showGroupState.appId,
                 onDismissRequest = dismiss,
                 control = displayed.control,
+                triggerStats = displayed.triggerStats,
+                matchAnyApp = (subsConfig as? SubsGlobalGroupConfig)?.matchAnyApp,
+                onMatchAnyAppChange = { value ->
+                    scope.launchUi {
+                        RuleGroupConfigService.setMatchAnyApp(
+                            showSubs, RuleGroupTarget.Global(showSubs.id, showGroup.key), value,
+                        )
+                    }
+                },
                 onSettingChange = { setting ->
                     val change = RuleGroupConfigService.prepare(
                         listOf(showGroupState.toSwitchTarget()),

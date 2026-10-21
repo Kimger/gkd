@@ -30,26 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.action_toast
-import li.gkd.app.resources.action_toast_enable
-import li.gkd.app.resources.action_toast_example_group
-import li.gkd.app.resources.action_toast_example_rule
-import li.gkd.app.resources.action_toast_preview
-import li.gkd.app.resources.action_toast_preview_hint
-import li.gkd.app.resources.action_toast_style_custom
-import li.gkd.app.resources.action_toast_style_hint
-import li.gkd.app.resources.action_toast_style_system
-import li.gkd.app.resources.action_toast_text
-import li.gkd.app.resources.action_toast_variable_count
-import li.gkd.app.resources.action_toast_variable_group
-import li.gkd.app.resources.action_toast_variable_rule
-import li.gkd.app.resources.action_toast_variables
-import li.gkd.app.resources.action_toast_variables_hint
-import li.gkd.app.resources.progress_fraction
-import li.gkd.app.resources.toast_style
-import li.gkd.app.resources.toast_text_input_hint
-import li.gkd.app.resources.update_success
+import li.gkd.app.resources.*
 import li.gkd.app.ui.MainViewModel
 import li.gkd.app.ui.component.GkPageBottomSpace
 import li.gkd.app.ui.component.GkSwitch
@@ -58,7 +39,6 @@ import li.gkd.app.ui.navigation.GkEditor
 import li.gkd.app.ui.page.EditorSession
 import li.gkd.app.ui.platform.UiHost
 import li.gkd.app.ui.platform.hideIme
-import li.gkd.app.ui.text.getSync
 import li.gkd.app.ui.util.ActionToastTemplate
 import li.gkd.app.util.ToastUtils
 import org.jetbrains.compose.resources.stringResource
@@ -94,7 +74,7 @@ fun ActionToastPage(
         ),
         navigator = mainVm.navigator,
         hideIme = host::hideIme,
-        scope = mainVm.scope,
+        actions = vm.editorActions,
     ) { padding ->
         Column(
             modifier =

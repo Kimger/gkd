@@ -3,15 +3,11 @@ package li.gkd.app.ui.settings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import li.gkd.app.platform.requestAutomatorRestart
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.edit_discard_confirmation
-import li.gkd.app.resources.notice_title
-import li.gkd.app.resources.unchanged
-import li.gkd.app.resources.update_success
+import li.gkd.app.resources.*
 import li.gkd.app.settings.SettingsRepository
 import li.gkd.app.ui.MainViewModel
 import li.gkd.app.ui.home.scopeAppSource
-import li.gkd.app.ui.option.AppSortOption
+import li.gkd.app.app.AppSort
 import li.gkd.app.ui.state.BaseViewModel
 import li.gkd.app.util.ToastUtils
 import org.jetbrains.compose.resources.getString
@@ -60,7 +56,7 @@ class BlockA11yAppListViewModel : BaseViewModel() {
         if (editorState.state.value.draft == draft) editorState.closeEditor()
     }
 
-    fun setSortType(value: AppSortOption) {
+    fun setSortType(value: AppSort) {
         SettingsRepository.updateSettings { it.copy(a11yAppSort = value.value) }
     }
 

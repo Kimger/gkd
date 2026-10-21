@@ -1,5 +1,7 @@
 package li.gkd.app.ui.home
 
+import li.gkd.app.ui.component.GkTriggerCount
+import li.gkd.app.record.TriggerSummary
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -16,8 +18,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import li.gkd.app.ui.component.GkPullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -28,8 +29,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import li.gkd.app.ui.component.gkTopAppBarScroll
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
@@ -40,36 +42,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import li.gkd.app.app.AppInfoRepository
+import li.gkd.app.error.displayMessage
 import li.gkd.app.model.AppInfo
 import li.gkd.app.permission.AppPermission
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.app_list_permission_error_description
-import li.gkd.app.resources.app_list_search
-import li.gkd.app.resources.app_list_update_success
-import li.gkd.app.resources.app_name_id_input_hint
-import li.gkd.app.resources.app_whitelist
-import li.gkd.app.resources.app_whitelist_state_description
-import li.gkd.app.resources.data_load_failed
-import li.gkd.app.resources.edit_enter
-import li.gkd.app.resources.edit_exit
-import li.gkd.app.resources.filter_title
-import li.gkd.app.resources.group_title
-import li.gkd.app.resources.loading_progress
-import li.gkd.app.resources.permission_error
-import li.gkd.app.resources.permission_query_apps
-import li.gkd.app.resources.rule_summary_open
-import li.gkd.app.resources.search_close
-import li.gkd.app.resources.search_no_results
-import li.gkd.app.resources.search_no_results_filter_hint
-import li.gkd.app.resources.sort_filter
-import li.gkd.app.resources.sort_title
-import li.gkd.app.resources.whitelist_add
-import li.gkd.app.resources.whitelist_edit
-import li.gkd.app.resources.whitelist_edit_mode_toggle
-import li.gkd.app.resources.whitelist_member
-import li.gkd.app.resources.whitelist_not_member
-import li.gkd.app.resources.whitelist_remove
-import li.gkd.app.resources.whitelist_title
+import li.gkd.app.resources.*
 import li.gkd.app.settings.SettingsRepository
 import li.gkd.app.state.Loadable
 import li.gkd.app.ui.MainViewModel
@@ -101,15 +77,14 @@ import li.gkd.app.ui.image.GkAppIcon
 import li.gkd.app.ui.navigation.AppConfigRoute
 import li.gkd.app.ui.navigation.EditBlockAppListRoute
 import li.gkd.app.ui.option.AppGroupOption
-import li.gkd.app.ui.option.AppSortOption
-import li.gkd.app.ui.option.findOption
+import li.gkd.app.app.AppSort
+import li.gkd.app.model.findOption
 import li.gkd.app.ui.platform.GkBackHandler
 import li.gkd.app.ui.platform.UiHost
 import li.gkd.app.ui.platform.hideIme
 import li.gkd.app.ui.share.launchUiAction
 import li.gkd.app.ui.style.getUpDownTransform
 import li.gkd.app.ui.style.itemPadding
-import li.gkd.app.ui.text.displayMessage
 import li.gkd.app.util.ToastUtils
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
@@ -118,6 +93,7 @@ data class AppListContentState(
     val appInfos: List<AppInfo>,
     val listState: Loadable<Unit> = Loadable.Ready(Unit),
     val ruleStatsFailed: Boolean = false,
+    val triggerStats: li.gkd.app.record.TriggerStats? = null,
     val searchText: String = "",
     val showSearchBar: Boolean = false,
     val editWhiteListMode: Boolean = false,
@@ -163,7 +139,6 @@ fun appListPage(
 
     val showSearchBar = state.showSearchBar
     val refreshing = state.refreshing
-    val pullToRefreshState = rememberPullToRefreshState()
     val editWhiteListMode = state.editWhiteListMode
     val pageScrollState = rememberListScrollState()
     val scrollBehavior = pageScrollState.scrollBehavior
@@ -180,7 +155,7 @@ fun appListPage(
     )
     return ScaffoldExt(
         navItem = BottomNavItem.AppList,
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        modifier = Modifier.gkTopAppBarScroll(scrollBehavior),
         topBar = {
             DisposableEffect(null) {
                 onDispose {
@@ -276,11 +251,11 @@ fun appListPage(
                                 inTop = true,
                                 title = stringResource(Res.string.sort_title),
                             ) {
-                                AppSortOption.objects.forEach { option ->
+                                AppSort.options.forEach { option ->
                                     GkMenuItemRadioButton(
-                                        text = option.label,
+                                        text = stringResource(option.labelResource),
                                         selected =
-                                            AppSortOption.objects.findOption(state.sort) == option,
+                                            AppSort.options.findOption(state.sort) == option,
                                         onClick = { SettingsRepository.updateSettings { it.copy(appSort = option.value) } },
                                     )
                                 }
@@ -290,13 +265,13 @@ fun appListPage(
                                     val newValue = option.invert(state.group)
                                     GkMenuItemCheckbox(
                                         enabled = newValue != 0,
-                                        text = option.label,
+                                        text = stringResource(option.labelResource),
                                         checked = option.include(state.group),
                                         onClick = { SettingsRepository.updateSettings { it.copy(appGroupType = newValue) } },
                                     )
                                 }
                             }
-                            GkMenuGroupCard(title = stringResource(Res.string.filter_title)) {
+                            GkMenuGroupCard(title = stringResource(Res.string.display_title)) {
                                 GkMenuItemCheckbox(
                                     text = stringResource(Res.string.whitelist_title),
                                     checked = state.showBlocked,
@@ -329,9 +304,8 @@ fun appListPage(
             )
         },
     ) { contentPadding ->
-        PullToRefreshBox(
+        GkPullToRefreshBox(
             modifier = Modifier.padding(contentPadding),
-            state = pullToRefreshState,
             isRefreshing = refreshing,
             onRefresh = ::refresh,
         ) {
@@ -362,8 +336,9 @@ fun appListPage(
                     GkAppListItem(
                         appInfo = appInfo,
                         icon = { GkAppIcon(appInfo.id, 32.dp) },
-                        name = { GkAppNameText(appInfo = appInfo) },
+                        name = { GkAppNameText(appId = appInfo.id, appInfo = appInfo) },
                         stats = stats,
+                        triggerSummary = if (editWhiteListMode) null else state.triggerStats?.app(appInfo.id),
                         editWhiteListMode = editWhiteListMode,
                         inWhiteList = appInfo.id in state.whiteListAppIds,
                         onClick = {
@@ -405,18 +380,26 @@ fun GkAppListItem(
     icon: @Composable () -> Unit,
     name: @Composable () -> Unit,
     stats: GkRuleStatsData?,
+    triggerSummary: TriggerSummary? = null,
     editWhiteListMode: Boolean,
     inWhiteList: Boolean,
     onClick: () -> Unit,
 ) {
+    val count = triggerSummary?.count?.takeIf { it > 0 && !editWhiteListMode }
+    val countText = count?.toString()
     val statsDescription = stats?.takeIf { it.hasRules }?.description
+    val appIdText = appInfo.id.takeIf { it != appInfo.name }
+    val supportingDescription = listOfNotNull(
+        statsDescription ?: appIdText,
+        countText?.let { stringResource(Res.string.trigger_count_value, it) },
+    ).joinToString("，")
     val description =
-        if (editWhiteListMode) appInfo.name
+        if (editWhiteListMode || supportingDescription.isEmpty()) appInfo.name
         else
             stringResource(
                 Res.string.app_whitelist_state_description,
                 appInfo.name,
-                statsDescription ?: appInfo.id,
+                supportingDescription,
             )
     val member = stringResource(Res.string.whitelist_member)
     val notMember = stringResource(Res.string.whitelist_not_member)
@@ -442,7 +425,8 @@ fun GkAppListItem(
                         action = null,
                     )
                 }
-                .itemPadding(),
+                .itemPadding()
+                .alpha(if (inWhiteList && !editWhiteListMode) 0.65f else 1f),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -453,10 +437,10 @@ fun GkAppListItem(
         ) {
             name()
             if (stats != null) {
-                GkRuleStats(stats, emptyText = appInfo.id)
-            } else {
+                GkRuleStats(stats, emptyText = appIdText.orEmpty())
+            } else if (appIdText != null) {
                 Text(
-                    text = appInfo.id,
+                    text = appIdText,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -470,12 +454,20 @@ fun GkAppListItem(
                 key = appInfo.id,
                 checked = inWhiteList,
             )
-        } else if (inWhiteList) {
-            GkIcon(
-                modifier = Modifier.padding(2.dp).size(20.dp),
-                imageVector = GkIcons.Block,
-                tint = MaterialTheme.colorScheme.secondary,
-            )
+        } else if (countText != null || inWhiteList) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (count != null) GkTriggerCount(count, lastTriggerTime = triggerSummary.lastTime)
+                if (inWhiteList) {
+                    GkIcon(
+                        modifier = Modifier.padding(2.dp).size(20.dp),
+                        imageVector = GkIcons.Block,
+                        tint = MaterialTheme.colorScheme.secondary,
+                    )
+                }
+            }
         }
     }
 }

@@ -15,8 +15,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.serialization.Serializable
 import li.gkd.app.network.AppLinks
 import li.gkd.app.platform.writeClipboardText
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.uri_unknown
+import li.gkd.app.resources.*
 import li.gkd.app.permission.SimulatorPermissionRequester
 import li.gkd.app.ui.MainViewModel
 import li.gkd.app.ui.component.ToastState
@@ -29,6 +28,7 @@ import li.gkd.app.ui.navigation.ActionLogRoute
 import li.gkd.app.ui.navigation.ActionToastRoute
 import li.gkd.app.ui.navigation.ActivityLogRoute
 import li.gkd.app.ui.navigation.AdvancedPageRoute
+import li.gkd.app.ui.navigation.ExternalCallsRoute
 import li.gkd.app.ui.navigation.AppConfigRoute
 import li.gkd.app.ui.navigation.AppRoute
 import li.gkd.app.ui.navigation.BlockA11yAppListRoute
@@ -40,6 +40,7 @@ import li.gkd.app.ui.navigation.GkdLink
 import li.gkd.app.ui.navigation.HomeRoute
 import li.gkd.app.ui.navigation.ImagePreviewRoute
 import li.gkd.app.ui.navigation.NotificationTextRoute
+import li.gkd.app.ui.navigation.QuickSettingsTilesRoute
 import li.gkd.app.ui.navigation.PrivilegeServiceRoute
 import li.gkd.app.ui.navigation.RuleExcludeEditorRoute
 import li.gkd.app.ui.navigation.SnapshotPageRoute
@@ -54,8 +55,7 @@ import li.gkd.app.ui.navigation.SubsGlobalGroupListRoute
 import li.gkd.app.ui.navigation.UpsertRuleGroupRoute
 import li.gkd.app.ui.navigation.WebViewRoute
 import li.gkd.app.ui.navigation.WorkModeRoute
-import li.gkd.app.ui.text.getSync
-import li.gkd.db.LOCAL_SUBS_ID
+import li.gkd.db.SubscriptionIds
 
 @Serializable
 data class DesktopEnvironment(
@@ -250,6 +250,7 @@ private val desktopRoutes by lazy {
         "home" to HomeRoute,
         "action-toast" to ActionToastRoute,
         "notification-text" to NotificationTextRoute,
+        "quick-settings-tiles" to QuickSettingsTilesRoute,
         "edit-whitelist" to EditBlockAppListRoute,
         "about" to AboutRoute,
         "block-a11y-setup" to BlockA11ySetupRoute,
@@ -259,15 +260,15 @@ private val desktopRoutes by lazy {
         "crash-reports" to CrashReportRoute,
         "activity-log" to ActivityLogRoute,
         "event-log" to A11yEventLogRoute,
-        "rule-editor" to UpsertRuleGroupRoute(LOCAL_SUBS_ID),
-        "category-editor" to CategoryEditorRoute(LOCAL_SUBS_ID),
-        "subs-global-groups" to SubsGlobalGroupListRoute(LOCAL_SUBS_ID),
-        "subs-apps" to SubsAppListRoute(LOCAL_SUBS_ID),
-        "subs-app-groups" to SubsAppGroupListRoute(LOCAL_SUBS_ID, "li.gkd"),
-        "subs-categories" to SubsCategoryRoute(LOCAL_SUBS_ID),
-        "subs-category-groups" to SubsCategoryGroupRoute(LOCAL_SUBS_ID, 0),
-        "subs-global-exclude" to SubsGlobalGroupExcludeRoute(LOCAL_SUBS_ID, 0),
-        "rule-exclude-editor" to RuleExcludeEditorRoute(LOCAL_SUBS_ID, 0),
+        "rule-editor" to UpsertRuleGroupRoute(SubscriptionIds.LOCAL),
+        "category-editor" to CategoryEditorRoute(SubscriptionIds.LOCAL),
+        "subs-global-groups" to SubsGlobalGroupListRoute(SubscriptionIds.LOCAL),
+        "subs-apps" to SubsAppListRoute(SubscriptionIds.LOCAL),
+        "subs-app-groups" to SubsAppGroupListRoute(SubscriptionIds.LOCAL, "li.gkd"),
+        "subs-categories" to SubsCategoryRoute(SubscriptionIds.LOCAL),
+        "subs-category-groups" to SubsCategoryGroupRoute(SubscriptionIds.LOCAL, 0),
+        "subs-global-exclude" to SubsGlobalGroupExcludeRoute(SubscriptionIds.LOCAL, 0),
+        "rule-exclude-editor" to RuleExcludeEditorRoute(SubscriptionIds.LOCAL, 0),
         "a11y-scope-apps" to A11YScopeAppListRoute,
         "block-a11y-apps" to BlockA11yAppListRoute,
         "app-config" to AppConfigRoute("li.gkd"),
@@ -283,6 +284,7 @@ private val desktopRoutes by lazy {
 
 fun routeFor(page: String): AppRoute = desktopRoutes.getValue(page)
 fun routeName(route: AppRoute): String = when (route) {
+    ExternalCallsRoute -> "external-calls"
     is SubsGlobalGroupListRoute -> "subs-global-groups"
     is SubsAppListRoute -> "subs-apps"
     is SubsAppGroupListRoute -> "subs-app-groups"

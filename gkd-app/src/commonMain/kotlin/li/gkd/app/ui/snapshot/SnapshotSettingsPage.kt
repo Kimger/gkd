@@ -16,45 +16,16 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import li.gkd.app.ui.component.gkTopAppBarScroll
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import li.gkd.app.network.AppLinks
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.action_cancel
-import li.gkd.app.resources.action_confirm
-import li.gkd.app.resources.action_export
-import li.gkd.app.resources.app_id
-import li.gkd.app.resources.app_id_invalid
-import li.gkd.app.resources.event_selector_invalid
-import li.gkd.app.resources.screenshot_processing
-import li.gkd.app.resources.screenshot_service
-import li.gkd.app.resources.screenshot_service_description
-import li.gkd.app.resources.snapshot_auto_export
-import li.gkd.app.resources.snapshot_auto_export_description
-import li.gkd.app.resources.snapshot_capture_methods
-import li.gkd.app.resources.snapshot_event_selector
-import li.gkd.app.resources.snapshot_event_selector_hint
-import li.gkd.app.resources.snapshot_hide_status_bar
-import li.gkd.app.resources.snapshot_hide_status_bar_description
-import li.gkd.app.resources.snapshot_screenshot_settings
-import li.gkd.app.resources.snapshot_screenshot_settings_open
-import li.gkd.app.resources.snapshot_screenshot_trigger
-import li.gkd.app.resources.snapshot_screenshot_trigger_description
-import li.gkd.app.resources.snapshot_settings
-import li.gkd.app.resources.snapshot_trigger_config_required
-import li.gkd.app.resources.snapshot_volume_trigger
-import li.gkd.app.resources.snapshot_volume_trigger_description
-import li.gkd.app.resources.target_app_id_hint
-import li.gkd.app.resources.update_success
+import li.gkd.app.resources.*
 import li.gkd.app.settings.ScreenshotConfigResult
 import li.gkd.app.settings.SettingsRepository
 import li.gkd.app.ui.MainViewModel
@@ -71,7 +42,6 @@ import li.gkd.app.ui.component.autoFocus
 import li.gkd.app.ui.platform.UiHost
 import li.gkd.app.ui.share.launchUi
 import li.gkd.app.ui.style.titleItemPadding
-import li.gkd.app.ui.text.getSync
 import li.gkd.app.util.ToastUtils
 import org.jetbrains.compose.resources.stringResource
 
@@ -89,21 +59,25 @@ fun SnapshotSettingsPage(
 
     val showCaptureScreenshotDialog by vm.showCaptureScreenshotDialog.collectAsStateWithLifecycle()
 
+    val appIdDraft by vm.appIdDraft.collectAsStateWithLifecycle()
+    val eventSelectorDraft by vm.eventSelectorDraft.collectAsStateWithLifecycle()
     if (showCaptureScreenshotDialog) {
         CaptureScreenshotConfigDialog(
-            appId = store.screenshotTargetAppId,
-            eventSelector = store.screenshotEventSelector,
+            appIdValue = appIdDraft,
+            eventSelectorValue = eventSelectorDraft,
+            onAppIdChange = vm::setAppIdDraft,
+            onEventSelectorChange = vm::setEventSelectorDraft,
             onOpenHelp = {
-                vm.setShowCaptureScreenshotDialog(false)
+                vm.closeCaptureScreenshotDialog()
                 mainVm.navigator.openWebPage(AppLinks.SnapshotHelp)
             },
-            onDismissRequest = { vm.setShowCaptureScreenshotDialog(false) },
+            onDismissRequest = { vm.closeCaptureScreenshotDialog() },
             onConfirm = { appId, selector ->
                 when (SettingsRepository.saveCaptureScreenshotConfig(appId, selector)) {
-                    ScreenshotConfigResult.Unchanged -> vm.setShowCaptureScreenshotDialog(false)
+                    ScreenshotConfigResult.Unchanged -> vm.closeCaptureScreenshotDialog()
                     ScreenshotConfigResult.Saved -> {
                         ToastUtils.show(Res.string.update_success.getSync())
-                        vm.setShowCaptureScreenshotDialog(false)
+                        vm.closeCaptureScreenshotDialog()
                     }
                     ScreenshotConfigResult.InvalidApp -> ToastUtils.show(Res.string.app_id_invalid.getSync())
                     ScreenshotConfigResult.InvalidSelector ->
@@ -115,7 +89,7 @@ fun SnapshotSettingsPage(
 
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     GkScaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        modifier = Modifier.gkTopAppBarScroll(scrollBehavior),
         topBar = {
             GkTopAppBar(
                 scrollBehavior = scrollBehavior,
@@ -166,7 +140,7 @@ fun SnapshotSettingsPage(
                         size = 32.dp,
                         iconSize = 20.dp,
                         onClickLabel = stringResource(Res.string.snapshot_screenshot_settings_open),
-                        onClick = { vm.setShowCaptureScreenshotDialog(true) },
+                        onClick = { vm.editCaptureScreenshot(store.screenshotTargetAppId, store.screenshotEventSelector) },
                         imageVector = GkIcons.PageInfo,
                         contentDescription =
                             stringResource(Res.string.snapshot_screenshot_settings),
@@ -236,14 +210,14 @@ expect suspend fun UiHost.ensureSnapshotSavePermission(): Boolean
 
 @Composable
 private fun CaptureScreenshotConfigDialog(
-    appId: String,
-    eventSelector: String,
+    appIdValue: String,
+    eventSelectorValue: String,
+    onAppIdChange: (String) -> Unit,
+    onEventSelectorChange: (String) -> Unit,
     onOpenHelp: () -> Unit,
     onDismissRequest: () -> Unit,
     onConfirm: (String, String) -> Unit,
 ) {
-    var appIdValue by remember { mutableStateOf(appId) }
-    var eventSelectorValue by remember { mutableStateOf(eventSelector) }
     GkAlertDialog(
         properties = DialogProperties(dismissOnClickOutside = false),
         title = {
@@ -265,7 +239,7 @@ private fun CaptureScreenshotConfigDialog(
                     label = { Text(stringResource(Res.string.app_id)) },
                     value = appIdValue,
                     placeholder = { Text(text = stringResource(Res.string.target_app_id_hint)) },
-                    onValueChange = { appIdValue = it },
+                    onValueChange = onAppIdChange,
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -276,7 +250,7 @@ private fun CaptureScreenshotConfigDialog(
                     placeholder = {
                         Text(text = stringResource(Res.string.snapshot_event_selector_hint))
                     },
-                    onValueChange = { eventSelectorValue = it },
+                    onValueChange = onEventSelectorChange,
                     maxLines = 4,
                     modifier = Modifier.fillMaxWidth().autoFocus(),
                 )

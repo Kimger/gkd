@@ -11,6 +11,7 @@ import androidx.room3.Query
 import androidx.room3.Update
 import androidx.room3.Upsert
 import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.Serializable
 
 @Entity(
     tableName = "subs_global_group_config",
@@ -22,11 +23,13 @@ import kotlinx.coroutines.flow.Flow
         onDelete = ForeignKey.CASCADE,
     )],
 )
+@Serializable
 data class SubsGlobalGroupConfig(
     @ColumnInfo(name = "subs_id") override val subsId: Long,
     @ColumnInfo(name = "group_key") override val groupKey: Int,
     @ColumnInfo(name = "enable") override val enable: Boolean? = null,
     @ColumnInfo(name = "exclude", defaultValue = "") override val exclude: String = "",
+    @ColumnInfo(name = "match_any_app", defaultValue = "NULL") val matchAnyApp: Boolean? = null,
 ) : SubsGroupConfig {
     @Dao
     interface SubsGlobalGroupConfigDao {

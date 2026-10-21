@@ -16,26 +16,20 @@ import li.gkd.app.data.appinfo.PackageAppCatalog.selfAppInfo
 import li.gkd.app.data.currentDeviceInfo
 import li.gkd.app.network.AppLinks
 import li.gkd.app.network.NetworkAddresses
-import li.gkd.app.network.ServerInfo
-import li.gkd.app.network.configureInspectionServer
+import li.gkd.app.network.inspection.ServerInfo
+import li.gkd.app.network.inspection.configureInspectionServer
 import li.gkd.app.notif.NotificationCatalog
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.http_port_occupied
-import li.gkd.app.resources.http_service_compact_label
-import li.gkd.app.resources.http_service_restart_success
-import li.gkd.app.resources.http_service_start_failed
-import li.gkd.app.resources.network_host_failed_prefix
+import li.gkd.app.resources.*
 import li.gkd.app.settings.SettingsRepository.settings
 import li.gkd.app.snapshot.SnapshotCaptureHost
 import li.gkd.app.subscription.SubscriptionRepository
-import li.gkd.app.ui.text.getSync
 import li.gkd.app.util.IntentUtils
 import li.gkd.app.util.JsonUtils
 import li.gkd.app.util.LogUtils
 import li.gkd.app.util.ToastUtils
 import li.gkd.app.util.launchLogged
 import li.gkd.app.util.mapState
-import li.gkd.db.LOCAL_HTTP_SUBS_ID
+import li.gkd.db.SubscriptionIds
 
 class HttpService : LifecycleHookService() {
     val httpServerPortFlow by lazy {
@@ -52,7 +46,7 @@ class HttpService : LifecycleHookService() {
         onDestroyed {
             if (settings.value.autoClearMemorySubs) {
                 appScope.launchLogged(Dispatchers.IO) {
-                    SubscriptionRepository.delete(LOCAL_HTTP_SUBS_ID)
+                    SubscriptionRepository.delete(SubscriptionIds.LOCAL_HTTP)
                 }
             }
         }
@@ -117,7 +111,7 @@ typealias ServerType = EmbeddedServer<CIOApplicationEngine, CIOApplicationEngine
 suspend fun clearHttpSubs() {
     // Clear abandoned HTTP rules only after the subscription repository has loaded.
     if (!HttpService.isRunning.value && settings.value.autoClearMemorySubs) {
-        SubscriptionRepository.delete(LOCAL_HTTP_SUBS_ID)
+        SubscriptionRepository.delete(SubscriptionIds.LOCAL_HTTP)
     }
 }
 

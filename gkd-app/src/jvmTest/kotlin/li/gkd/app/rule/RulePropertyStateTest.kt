@@ -12,8 +12,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RulePropertyStateTest {
-    private val policy = RuleGroupPolicy()
-    private val limitationsPolicy = RuleLimitationPolicy()
 
     private val emptyExclusions = ExcludeData(emptyMap(), emptySet())
     private val info = AppInfo("app.id", "App", 10, "1.0", false, 1, false, 0)
@@ -26,7 +24,7 @@ class RulePropertyStateTest {
     private val group = subscription.globalGroups.single()
 
     private fun state(config: SubsGlobalGroupConfig?, appId: String? = "app.id") =
-        policy.controlState(
+        RuleGroupPolicy.controlState(
             subscription, group, appId,
             SubscriptionConfigSnapshot(
                 subsItems = listOf(SubsItem(-2, order = 0, enable = true)),
@@ -41,12 +39,25 @@ class RulePropertyStateTest {
         assertTrue(app.defaultEnabled)
         assertTrue(app.configuredEnabled)
         assertTrue(app.hasCustomSetting)
-        assertFalse(app.limitations.hasPersonalProperties)
+        assertFalse(app.limitations.hasPersonalExclusions)
         val global = state(config, appId = null)
         assertFalse(global.hasCustomSetting)
-        assertTrue(global.limitations.hasPersonalProperties)
+        assertTrue(global.limitations.hasPersonalExclusions)
         assertFalse(state(config, "other.app").hasCustomSetting)
-        assertFalse(state(config, "other.app").limitations.hasPersonalProperties)
+        assertFalse(state(config, "other.app").limitations.hasPersonalExclusions)
+    }
+
+    @Test
+    fun defaultAppScopeDoesNotCountAsACustomExclusion() {
+        listOf(true, false).forEach { value ->
+            val config = SubsGlobalGroupConfig(-2, 1, matchAnyApp = value)
+            assertFalse(state(config, appId = null).limitations.hasPersonalExclusions)
+            assertFalse(state(config).limitations.hasPersonalExclusions)
+            assertTrue(state(config.copy(exclude = "!app.id"), appId = null)
+                .limitations.hasPersonalExclusions)
+            assertTrue(state(config.copy(exclude = "app.id/app.id.Page"))
+                .limitations.hasPersonalExclusions)
+        }
     }
 
     @Test
@@ -57,14 +68,14 @@ class RulePropertyStateTest {
         )
         val config = SubsGlobalGroupConfig(-2, 1, null, exclude.stringify())
         assertTrue(state(config).hasCustomSetting)
-        assertTrue(state(config).limitations.hasPersonalProperties)
+        assertTrue(state(config).limitations.hasPersonalExclusions)
         val reset = RuleSwitchPolicy.updateGroup(
             RuleSwitchTarget.GlobalApp(-2, 1, "app.id"),
             config, RuleSetting.FollowDefault
         ) as SubsGlobalGroupConfig
         val after = state(reset)
         assertFalse(after.hasCustomSetting)
-        assertTrue(after.limitations.hasPersonalProperties)
+        assertTrue(after.limitations.hasPersonalExclusions)
         assertEquals("app.id.Page", after.limitations.personal.single().value)
         assertEquals(RuleLimitationKind.ExcludedPageExact, after.limitations.personal.single().kind)
         assertEquals(exclude.activityIds, ExcludeData.parse(reset.exclude).activityIds)
@@ -73,10 +84,10 @@ class RulePropertyStateTest {
     @Test
     fun implicitGlobalDefaultsDoNotLookLikeExtraSubscriptionRestrictions() {
         val implicit =
-            limitationsPolicy.resolve(subscription, group, "app.id", emptyExclusions, info)
+            RuleLimitationPolicy.resolve(subscription, group, "app.id", emptyExclusions, info)
         assertTrue(implicit.builtIn.isNotEmpty()) // They remain available in the details.
         assertFalse(implicit.hasBuiltInProperties)
-        val explicit = limitationsPolicy.resolve(
+        val explicit = RuleLimitationPolicy.resolve(
             subscription,
             group.copy(matchSystemApp = false), "app.id", emptyExclusions, info
         )
@@ -93,9 +104,9 @@ class RulePropertyStateTest {
         }"""
         )
         val raw = sub.apps.single().groups.single()
-        val cleared = limitationsPolicy.resolve(sub, raw, "app.id", emptyExclusions, info)
+        val cleared = RuleLimitationPolicy.resolve(sub, raw, "app.id", emptyExclusions, info)
         assertFalse(cleared.hasBuiltInProperties)
-        val inherited = limitationsPolicy.resolve(
+        val inherited = RuleLimitationPolicy.resolve(
             sub,
             raw.copy(rules = listOf(raw.rules.single().copy(excludeActivityIds = null))),
             "app.id", emptyExclusions, info

@@ -1,5 +1,6 @@
 package li.gkd.app.ui.home
 
+import li.gkd.app.META
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Column
@@ -11,43 +12,21 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import li.gkd.app.ui.component.GkPullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import li.gkd.app.error.messageResource
 import li.gkd.app.network.AppLinks
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.action_cancel
-import li.gkd.app.resources.action_delete
-import li.gkd.app.resources.data_load_failed
-import li.gkd.app.resources.enable_anyway
-import li.gkd.app.resources.loading_progress
-import li.gkd.app.resources.selected_subscriptions_changed
-import li.gkd.app.resources.subscription_add
-import li.gkd.app.resources.subscription_add_dialog_open
-import li.gkd.app.resources.subscription_battery_help
-import li.gkd.app.resources.subscription_battery_warning
-import li.gkd.app.resources.subscription_battery_warning_setting
-import li.gkd.app.resources.subscription_delete
-import li.gkd.app.resources.subscription_delete_except_local
-import li.gkd.app.resources.subscription_multiple_enabled_warning
-import li.gkd.app.resources.subscription_refresh_wait
-import li.gkd.app.resources.subscription_refresh_wait_compact
-import li.gkd.app.resources.subscription_settings
-import li.gkd.app.resources.subscriptions_delete_confirmation
-import li.gkd.app.resources.subscriptions_deleted_count
-import li.gkd.app.resources.subscriptions_local_excluded_suffix
-import li.gkd.app.resources.subscriptions_update
+import li.gkd.app.resources.*
+import li.gkd.app.subscription.SubscriptionRepository
 import li.gkd.app.settings.SettingsRepository
 import li.gkd.app.state.Loadable
 import li.gkd.app.subscription.SubscriptionResult
@@ -66,26 +45,21 @@ import li.gkd.app.ui.component.GkTextMenu
 import li.gkd.app.ui.component.GkTextSwitch
 import li.gkd.app.ui.component.SubscriptionCardData
 import li.gkd.app.ui.component.gkPageBottomSpace
-import li.gkd.app.ui.component.rememberMultiSelectionState
 import li.gkd.app.ui.component.rememberPinnedListScrollState
 import li.gkd.app.ui.component.rememberReorderSession
 import li.gkd.app.ui.MainViewModel
 import li.gkd.app.ui.platform.GkBackHandler
-import li.gkd.app.ui.settings.appVersion
 import li.gkd.app.ui.share.launchUi
 import li.gkd.app.ui.navigation.UpsertRuleGroupRoute
 import li.gkd.app.ui.option.UpdateTimeOption
-import li.gkd.app.ui.option.findOption
+import li.gkd.app.model.findOption
 import li.gkd.app.ui.subscription.SubsManageUiState
-import li.gkd.app.ui.subscription.message
 import li.gkd.app.ui.text.formatTimeAgo
-import li.gkd.app.ui.text.getSync
-import li.gkd.app.ui.text.subscriptionMessageResource
 import li.gkd.app.util.ToastUtils
-import li.gkd.db.LOCAL_SUBS_ID
 import org.jetbrains.compose.resources.stringResource
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import li.gkd.db.SubscriptionIds
 
 @Composable
 fun subsManagePage(
@@ -105,32 +79,32 @@ private fun subsManageContent(
     val state = loadableState.value
     val refresh: () -> Unit = { vm.scope.launchUi { vm.refreshSubscriptions().message()?.let { ToastUtils.show(it) } } }
     GkDesktopKeyHandler(Key.F5, onKey = refresh)
-    var settingsDialogVisible by remember { mutableStateOf(false) }
+    val settingsDialogVisible by vm.settingsDialogVisible.collectAsStateWithLifecycle()
     val powerWarningItem by vm.powerWarningItemFlow.collectAsStateWithLifecycle()
     val store by SettingsRepository.settings.collectAsStateWithLifecycle()
     val subItems = state?.subItems.orEmpty()
     val subsIdToRaw = state?.subscriptions.orEmpty()
     val batchBusy by vm.batchBusyFlow.collectAsStateWithLifecycle()
 
+    val refreshProgress by SubscriptionRepository.refreshing.collectAsStateWithLifecycle()
     val refreshing by li.gkd.app.subscription.SubscriptionRepository.updating.collectAsStateWithLifecycle()
-    val pullToRefreshState = rememberPullToRefreshState()
-    // 多选仅属于当前订阅 Tab 的临时交互状态，切换 Tab 后按设计清空，不要改为可保存状态。
-    val selectionState = rememberMultiSelectionState<Long>()
+    val selectionState = vm.selection
+    val selectionSnapshot by selectionState.state.collectAsStateWithLifecycle()
     val allIds = remember(subItems) { subItems.mapTo(mutableSetOf()) { it.id } }
-    val selectedIds = selectionState.selectedKeys intersect allIds
-    val isSelectedMode = selectionState.active
+    val selectedIds = selectionSnapshot.selectedKeys intersect allIds
+    val isSelectedMode = selectionSnapshot.active
     val reorderSession = rememberReorderSession(subItems) { it.id }
     val orderSubItems = reorderSession.items
     GkBackHandler(isSelectedMode) {
         selectionState.clear()
     }
-    LaunchedEffect(allIds) {
-        selectionState.retain(allIds)
+    LaunchedEffect(allIds, loadableState) {
+        if (loadableState is Loadable.Ready) selectionState.retain(allIds)
     }
 
     if (settingsDialogVisible) {
         GkSettingsDialog(
-            onDismissRequest = { settingsDialogVisible = false },
+            onDismissRequest = { vm.setSettingsDialogVisible(false) },
             title = stringResource(Res.string.subscription_settings),
         ) {
             GkTextMenu(
@@ -206,11 +180,13 @@ private fun subsManageContent(
                 actions = { selectedMode ->
                     if (selectedMode) {
                         GkMultiSelectionActions(
-                            selectionState = selectionState,
+                            selected = selectionSnapshot.selectedKeys,
                             keys = allIds,
+                            onSelectAll = selectionState::selectAll,
+                            onInvert = selectionState::invert,
                             enabled = !batchBusy && !refreshing && !reorderSession.dragging,
                         ) { dismiss ->
-                            val canDeleteIds = selectedIds - LOCAL_SUBS_ID
+                            val canDeleteIds = selectedIds - SubscriptionIds.LOCAL
                             GkBatchActionMenuItem(
                                 text = if (canDeleteIds.isEmpty()) stringResource(Res.string.subscription_delete_except_local) else stringResource(
                                     Res.string.action_delete
@@ -222,7 +198,7 @@ private fun subsManageContent(
                                     val text = Res.string.subscriptions_delete_confirmation.getSync(
                                         idsToDelete.size
                                     ) +
-                                            if (LOCAL_SUBS_ID in selectedIds) Res.string.subscriptions_local_excluded_suffix.getSync() else ""
+                                            if (SubscriptionIds.LOCAL in selectedIds) Res.string.subscriptions_local_excluded_suffix.getSync() else ""
                                     vm.scope.launchUi {
                                         vm.runBatchAction {
                                             if (!mainVm.dialogRequests.confirm(
@@ -251,7 +227,7 @@ private fun subsManageContent(
                         GkSubscriptionActions(
                             matching = store.enableMatch,
                             onToggleMatching = vm::toggleMatching,
-                            onSettings = { settingsDialogVisible = true },
+                            onSettings = { vm.setSettingsDialogVisible(true) },
                             onMenuOpen = {
                                 if (refreshing) ToastUtils.show(Res.string.subscription_refresh_wait.getSync())
                                 !refreshing
@@ -259,7 +235,7 @@ private fun subsManageContent(
                             onAddAppRule = {
                                 mainVm.navigator.navigate(
                                     UpsertRuleGroupRoute(
-                                        subsId = LOCAL_SUBS_ID,
+                                        subsId = SubscriptionIds.LOCAL,
                                         groupKey = null,
                                         appId = "",
                                         forward = true
@@ -269,7 +245,7 @@ private fun subsManageContent(
                             onAddGlobalRule = {
                                 mainVm.navigator.navigate(
                                     UpsertRuleGroupRoute(
-                                        subsId = LOCAL_SUBS_ID,
+                                        subsId = SubscriptionIds.LOCAL,
                                         groupKey = null,
                                         appId = null,
                                         forward = true
@@ -291,8 +267,7 @@ private fun subsManageContent(
                         ToastUtils.show(Res.string.subscription_refresh_wait_compact.getSync())
                     } else {
                         vm.scope.launchUi {
-                            val url = mainVm.subsLinkDialog.request() ?: return@launchUi
-                            vm.addOrModifySubscription(url).message()?.let { ToastUtils.show(it) }
+                            mainVm.subsLinkDialog.request()
                         }
                     }
                 },
@@ -306,10 +281,9 @@ private fun subsManageContent(
             }
         Column(modifier = Modifier.padding(contentPadding).fillMaxSize()) {
             GkMatchingBanner(store.enableMatch, vm::enableMatching)
-            PullToRefreshBox(
+            GkPullToRefreshBox(
                 modifier = Modifier.weight(1f),
-                state = pullToRefreshState,
-                isRefreshing = refreshing,
+                isRefreshing = refreshProgress,
                 onRefresh = refresh,
             ) {
                 LazyColumn(
@@ -319,7 +293,7 @@ private fun subsManageContent(
                     if (loadableState !is Loadable.Ready) {
                         item("load-state") {
                             Text(
-                                text = (loadableState as? Loadable.Failure)?.cause?.subscriptionMessageResource()
+                                text = (loadableState as? Loadable.Failure)?.cause?.messageResource()
                                     ?: stringResource(if (loadableState is Loadable.Loading) Res.string.loading_progress else Res.string.data_load_failed),
                                 modifier = Modifier.padding(16.dp),
                             )
@@ -327,8 +301,8 @@ private fun subsManageContent(
                     }
                     itemsIndexed(orderSubItems, { _, subItem -> subItem.id }) { index, subItem ->
                         // Keep the initial gesture alive after it enters selection mode.
-                        val canDrag = reorderSession.dragging ||
-                                (!refreshing && !batchBusy && !isSelectedMode && orderSubItems.size > 1)
+                        val canDrag = orderSubItems.size > 1 && (reorderSession.dragging ||
+                                (!refreshing && !batchBusy && !isSelectedMode))
                         ReorderableItem(
                             state = reorderableLazyColumnState,
                             key = subItem.id,
@@ -372,10 +346,11 @@ private fun subsManageContent(
                                     globalGroups = subsIdToRaw[subItem.id]?.globalGroups?.size ?: 0,
                                     apps = subsIdToRaw[subItem.id]?.apps?.size ?: 0,
                                     appGroups = subsIdToRaw[subItem.id]?.appGroups?.size ?: 0,
+                                    triggerCount = state?.triggerCounts?.get(subItem.id) ?: 0L,
                                     updatedAt = formatTimeAgo(subItem.mtime),
-                                    appName = appVersion().appName,
-                                    loadError = state?.loadErrors?.get(subItem.id)?.subscriptionMessageResource(),
-                                    refreshError = state?.refreshErrors?.get(subItem.id)?.subscriptionMessageResource(),
+                                    appName = META.appName,
+                                    loadError = state?.loadErrors?.get(subItem.id)?.messageResource(),
+                                    updateFailed = state?.refreshErrors?.containsKey(subItem.id) == true,
                                 ),
                                 matchingEnabled = store.enableMatch,
                                 index = index + 1,

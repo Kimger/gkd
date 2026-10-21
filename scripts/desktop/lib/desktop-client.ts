@@ -1,4 +1,4 @@
-import { request } from 'node:http';
+import { request, type IncomingHttpHeaders } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -21,9 +21,20 @@ export interface Environment {
   android: Record<string, number | boolean | string>;
 }
 export type SimulatorSettings = Record<string, Record<string, unknown>>;
+export type SimulatedService = 'Status' | 'Button' | 'Activity' | 'Event' | 'Track' | 'Screenshot' | 'Http' | 'Accessibility' | 'Automation';
+export type ServiceEventType = 'Authorized' | 'Cancelled' | 'Connected' | 'Failed';
+export interface ServiceSnapshot {
+  runtime: Record<SimulatedService, { phase: 'Stopped' | 'AwaitingAuthorization' | 'Starting' | 'Running' | 'Failed'; attempt: number; failure: string | null }>;
+  plans: Record<Exclude<SimulatedService, 'Http'>, { startResult: 'Success' | 'Failure' | 'Manual'; authorization: 'Allow' | 'Cancel' | 'Manual'; failure: string }>;
+  a11yEnabled: boolean; partiallyDisabled: boolean;
+  logs: string[];
+}
 export interface DesktopState {
   simulator: SimulatorSettings;
   isolated: boolean; page: string; variant: string; environment: Environment; lastEvent: string | null;
+}
+export interface DesktopResponse {
+  status: number; headers: IncomingHttpHeaders; body: Buffer;
 }
 export function nodes(root: UiNode): UiNode[] {
   return [root, ...root.children.flatMap(nodes)];
@@ -41,30 +52,39 @@ export class DesktopClient {
   readonly port: number;
   constructor(port: number) { this.port = port; }
   // Explicit direct localhost transport, independent of environment proxy settings.
-  bytes(path: string, body?: unknown): Promise<Buffer> {
+  response(path: string, body?: unknown, options: { rawBody?: string; contentType?: string } = {}): Promise<DesktopResponse> {
     return new Promise((resolve, reject) => {
       const req = request({ hostname: '127.0.0.1', port: this.port, path: `/${path}`,
-        method: body === undefined ? 'GET' : 'POST',
-        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        method: body === undefined && options.rawBody === undefined ? 'GET' : 'POST',
+        headers: { 'Content-Type': options.contentType ?? 'application/json; charset=utf-8' },
       }, res => {
         const chunks: Buffer[] = [];
         res.on('data', chunk => chunks.push(Buffer.from(chunk)));
         res.on('error', reject);
         res.on('end', () => {
           const data = Buffer.concat(chunks);
-          if (res.statusCode !== 200) reject(new Error(`HTTP ${res.statusCode}: ${data.toString()}`));
-          else resolve(data);
+          resolve({ status: res.statusCode!, headers: res.headers, body: data });
         });
       });
       req.setTimeout(20_000, () => req.destroy(new Error(`Request timeout: ${path}`)));
       req.on('error', reject);
-      req.end(body === undefined ? undefined : JSON.stringify(body));
+      req.end(options.rawBody ?? (body === undefined ? undefined : JSON.stringify(body)));
     });
+  }
+  async bytes(path: string, body?: unknown): Promise<Buffer> {
+    const response = await this.response(path, body);
+    if (response.status !== 200) throw new Error(`HTTP ${response.status}: ${response.body.toString()}`);
+    return response.body;
   }
   async json<T>(path: string, body?: unknown): Promise<T> {
     return JSON.parse((await this.bytes(path, body)).toString()) as T;
   }
   state() { return this.json<DesktopState>('state'); }
+  services() { return this.json<ServiceSnapshot>('services'); }
+  serviceCommand(service: SimulatedService, enabled: boolean) { return this.json<ServiceSnapshot>('services/command', { service, enabled }); }
+  serviceEvent(service: SimulatedService, type: ServiceEventType, attempt: number, reason?: string) {
+    return this.json<ServiceSnapshot>('services/event', { service, type, attempt, ...(reason === undefined ? {} : { reason }) });
+  }
   window(window: WindowId = 'app') { return this.json<WindowSnapshot>(`window?window=${window}`); }
   scenario(page: string, extra: Record<string, unknown> = {}) { return this.json('scenario', { page, ...extra }); }
   replaceSimulator(value: SimulatorSettings) { return this.json('simulator', value); }

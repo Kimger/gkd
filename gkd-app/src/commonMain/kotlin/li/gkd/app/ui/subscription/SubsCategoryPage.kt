@@ -1,6 +1,11 @@
 package li.gkd.app.ui.subscription
 
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -8,34 +13,26 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import li.gkd.app.ui.component.gkTopAppBarScroll
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import li.gkd.app.resources.Res
-import li.gkd.app.resources.action_close
-import li.gkd.app.resources.action_delete
-import li.gkd.app.resources.action_turn_on
-import li.gkd.app.resources.categories_delete_confirmation
-import li.gkd.app.resources.categories_empty
-import li.gkd.app.resources.category_add
-import li.gkd.app.resources.category_delete
-import li.gkd.app.resources.category_follow_subscription
-import li.gkd.app.resources.category_help
-import li.gkd.app.resources.category_help_description
-import li.gkd.app.resources.category_use_group_default
-import li.gkd.app.resources.delete_success
-import li.gkd.app.resources.rule_categories
-import li.gkd.app.resources.update_success
+import li.gkd.app.resources.*
 import li.gkd.app.rule.CategorySetting
 import li.gkd.app.ui.MainViewModel
+import li.gkd.app.ui.component.GkAlertDialog
 import li.gkd.app.ui.component.GkAnimatedFloatingActionButton
 import li.gkd.app.ui.component.GkBatchActionMenuItem
 import li.gkd.app.ui.component.GkEmptyState
@@ -53,7 +50,6 @@ import li.gkd.app.ui.component.GkSubscriptionPageContent
 import li.gkd.app.ui.component.GkTooltipIconButtonBox
 import li.gkd.app.ui.component.GkTwoLineText
 import li.gkd.app.ui.component.rememberListScrollState
-import li.gkd.app.ui.component.rememberMultiSelectionState
 import li.gkd.app.ui.navigation.CategoryEditorRoute
 import li.gkd.app.ui.navigation.SubsCategoryGroupRoute
 import li.gkd.app.ui.navigation.SubsCategoryRoute
@@ -71,15 +67,23 @@ fun SubsCategoryPage(
 ) {
     val mainVm = MainViewModel.requireCurrent()
     val vm = viewModel { SubsCategoryViewModel(route) }
+    var showHelp by remember { mutableStateOf(false) }
+    if (showHelp) CategoryHelpDialog { showHelp = false }
     val busy by vm.busyFlow.collectAsStateWithLifecycle()
-    val selection = rememberMultiSelectionState<Int>()
-    GkBackHandler(selection.active) { selection.clear() }
+    val selection = vm.selection
+    val selectionSnapshot by selection.state.collectAsStateWithLifecycle()
+    GkBackHandler(selectionSnapshot.active) { selection.clear() }
     GkSubscriptionPageContent(vm.uiState, mainVm.navigator::pop) { state ->
         val subs = state.subscription
         val scroll = rememberListScrollState()
+        scroll.ResetOnListChange(
+            state.categories,
+            key = { it.category.key },
+            leadingItemKey = if (state.uncategorizedApps.isNotEmpty()) "uncategorized" else null,
+        )
         val keys =
             remember(state.categories) { state.categories.mapTo(mutableSetOf()) { it.category.key } }
-        val selected = selection.selectedKeys intersect keys
+        val selected = selectionSnapshot.selectedKeys intersect keys
         LaunchedEffect(keys) { selection.retain(keys) }
         fun setSelected(setting: CategorySetting) {
             val selectedKeys = selected
@@ -91,10 +95,10 @@ fun SubsCategoryPage(
             }
         }
         GkScaffold(
-            modifier = Modifier.nestedScroll(scroll.scrollBehavior.nestedScrollConnection),
+            modifier = Modifier.gkTopAppBarScroll(scroll.scrollBehavior),
             topBar = {
                 GkMultiSelectionTopAppBar(
-                    selectedMode = selection.active,
+                    selectedMode = selectionSnapshot.active,
                     selectedCount = selected.size,
                     onExitSelection = selection::clear,
                     onNavigateBack = mainVm.navigator::pop,
@@ -108,7 +112,7 @@ fun SubsCategoryPage(
                     },
                     actions = { selectedMode ->
                         if (selectedMode) {
-                            GkMultiSelectionActions(selection, keys, enabled = !busy) { dismiss ->
+                            GkMultiSelectionActions(selectionSnapshot.selectedKeys, keys, selection::selectAll, selection::invert, enabled = !busy) { dismiss ->
                                 GkBatchActionMenuItem(
                                     stringResource(Res.string.category_follow_subscription),
                                     dismiss,
@@ -151,14 +155,7 @@ fun SubsCategoryPage(
                             GkIconButton(
                                 imageVector = GkIcons.Info,
                                 contentDescription = stringResource(Res.string.category_help),
-                                onClick = {
-                                    vm.scope.launchUi {
-                                        mainVm.dialogRequests.showMessage(
-                                            title = getString(Res.string.category_help),
-                                            text = getString(Res.string.category_help_description),
-                                        )
-                                    }
-                                })
+                                onClick = { showHelp = true })
                         }
                     },
                 )
@@ -166,7 +163,7 @@ fun SubsCategoryPage(
             floatingActionButton = {
                 if (subs.isLocal) {
                     GkAnimatedFloatingActionButton(
-                        visible = !selection.active,
+                        visible = !selectionSnapshot.active,
                         onClick = { mainVm.navigator.navigate(CategoryEditorRoute(subs.id)) },
                         imageVector = GkIcons.Add,
                         contentDescription = stringResource(Res.string.category_add),
@@ -178,10 +175,32 @@ fun SubsCategoryPage(
                 modifier = Modifier.scaffoldPadding(padding),
                 state = scroll.listState,
             ) {
+                if (state.uncategorizedApps.isNotEmpty()) {
+                    item("uncategorized") {
+                        GkRuleListItem(
+                            onClick = { mainVm.navigator.navigate(SubsCategoryGroupRoute(subs.id, null)) },
+                            selectable = false,
+                            trailingInfo = {
+                                GkRuleStats(
+                                    GkRuleStatsData(
+                                        apps = state.uncategorizedApps.size,
+                                        appGroups = state.uncategorizedApps.sumOf { it.groups.size },
+                                        enabledAppGroups = state.uncategorizedEnabledGroupCount,
+                                    )
+                                )
+                            },
+                        ) {
+                            Text(
+                                stringResource(Res.string.rule_category_uncategorized),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
+                    }
+                }
                 items(state.categories, key = { it.category.key }) { summary ->
                     CategoryItemCard(
                         summary = summary,
-                        selectedMode = selection.active,
+                        selectedMode = selectionSnapshot.active,
                         selected = summary.category.key in selected,
                         selectionEnabled = !busy,
                         onLongClick = { selection.select(summary.category.key) },
@@ -197,7 +216,7 @@ fun SubsCategoryPage(
                     )
                 }
                 item(ListPlaceholder.KEY, ListPlaceholder.TYPE) {
-                    if (state.categories.isEmpty()) GkEmptyState(stringResource(Res.string.categories_empty))
+                    if (state.categories.isEmpty() && state.uncategorizedApps.isEmpty()) GkEmptyState(stringResource(Res.string.categories_empty))
                     GkPageBottomSpace()
                 }
             }
@@ -224,16 +243,14 @@ private fun CategoryItemCard(
         onLongClick = onLongClick,
         onSelect = onSelect,
         trailing = {
-            GkTooltipIconButtonBox(contentDescription = summary.setting.label) {
-                Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                    GkIcon(
-                        imageVector = summary.setting.icon,
-                        modifier = Modifier.size(20.dp),
-                        contentDescription = summary.setting.label,
-                        tint = if (summary.setting == CategorySetting.FollowSubscription)
-                            MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
-                    )
-                }
+            val description = categorySettingDescription(summary.setting, summary.category.enable)
+            GkTooltipIconButtonBox(contentDescription = description) {
+                CategorySettingIcons(
+                    setting = summary.setting,
+                    subscriptionDefault = summary.category.enable,
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                        .clearAndSetSemantics { contentDescription = description },
+                )
             }
         }) {
         Text(
@@ -255,5 +272,93 @@ private fun CategoryItemCard(
                 enabledAppGroups = summary.enabledGroupCount, showZeroCounts = true
             )
         )
+    }
+}
+
+@Composable
+private fun categorySettingDescription(setting: CategorySetting, subscriptionDefault: Boolean?): String =
+    stringResource(
+        if (setting == CategorySetting.FollowSubscription) {
+            when (subscriptionDefault) {
+                true -> Res.string.category_follow_subscription_enabled
+                false -> Res.string.category_follow_subscription_disabled
+                null -> Res.string.category_follow_subscription_unspecified
+            }
+        } else setting.descriptionResource
+    )
+
+@Composable
+private fun CategorySettingIcons(
+    setting: CategorySetting,
+    subscriptionDefault: Boolean?,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        GkIcon(
+            imageVector = setting.icon,
+            modifier = Modifier.size(20.dp),
+            contentDescription = null,
+            tint = if (setting == CategorySetting.Enabled) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (setting == CategorySetting.FollowSubscription && subscriptionDefault != null) {
+            GkIcon(
+                imageVector = if (subscriptionDefault) GkIcons.CheckCircle else GkIcons.RemoveCircleOutline,
+                modifier = Modifier.size(20.dp),
+                contentDescription = null,
+                tint = if (subscriptionDefault) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CategoryHelpDialog(onDismissRequest: () -> Unit) {
+    GkAlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = { Text(stringResource(Res.string.category_help)) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text(
+                    stringResource(Res.string.category_icon_legend),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                CategoryHelpItem(CategorySetting.FollowSubscription, true)
+                CategoryHelpItem(CategorySetting.FollowSubscription, false)
+                CategoryHelpItem(CategorySetting.FollowSubscription, null)
+                CategoryHelpItem(CategorySetting.Enabled)
+                CategoryHelpItem(CategorySetting.Disabled)
+                CategoryHelpItem(CategorySetting.GroupDefault)
+                Text(stringResource(Res.string.category_help_description))
+                Text(
+                    stringResource(Res.string.category_help_state_note),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text(stringResource(Res.string.action_understood))
+            }
+        },
+    )
+}
+
+@Composable
+private fun CategoryHelpItem(setting: CategorySetting, subscriptionDefault: Boolean? = null) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CategorySettingIcons(setting, subscriptionDefault)
+        Text(categorySettingDescription(setting, subscriptionDefault), Modifier.weight(1f))
     }
 }

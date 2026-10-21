@@ -3,9 +3,11 @@ package li.gkd.app.rule
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.Serializable
 import li.gkd.app.app.AppInfoRepository
 import li.gkd.app.app.launcherAppIdFlow
 import li.gkd.app.model.ExcludeData
+import li.gkd.app.resources.*
 import li.gkd.app.settings.SettingsRepository
 import li.gkd.app.subscription.RawSubscription
 import li.gkd.app.subscription.SubscriptionException
@@ -19,6 +21,7 @@ import li.gkd.db.SubsGroupConfig
 import li.gkd.db.SubscriptionConfigSnapshot
 import li.gkd.db.SubscriptionConfigStore
 import li.gkd.db.withExclude
+import org.jetbrains.compose.resources.getString
 
 data class RuleGroupConfiguration(
     val group: SubsGroupConfig?,
@@ -26,7 +29,6 @@ data class RuleGroupConfiguration(
 )
 
 object RuleGroupConfigService {
-    val policy by lazy { RuleGroupPolicy() }
     fun groupConfiguration(target: RuleGroupTarget): Flow<RuleGroupConfiguration> =
         SubscriptionConfigStore.observe().map { snapshot ->
             RuleGroupConfiguration(
@@ -63,24 +65,34 @@ object RuleGroupConfigService {
             val configs = SubscriptionConfigStore.capture().categoryConfigs
                 .filter { it.subsId == expected.id }.associateBy { it.categoryKey }
             check(expectedSettings.all { (key, expectedSetting) ->
-                CategoryPolicy.setting(configs[key]) == expectedSetting
+                CategorySetting.from(configs[key]) == expectedSetting
             }) { throw SubscriptionException(SubscriptionFailureReason.CategoryConfigConflict) }
-            expectedSettings.keys.forEach { categoryKey ->
-                if (setting == CategorySetting.FollowSubscription) {
-                    Db.subsCategoryConfigDao.deleteByCategoryKey(current.id, categoryKey)
-                } else {
-                    Db.subsCategoryConfigDao.upsert(
-                        SubsCategoryConfig(
-                            subsId = current.id,
-                            categoryKey = categoryKey,
-                            enable = when (setting) {
-                                CategorySetting.Enabled -> true
-                                CategorySetting.Disabled -> false
-                                else -> null
-                            },
-                        )
+            writeCategorySettings(current.id, expectedSettings.keys, setting)
+        }
+    }
+
+    suspend fun setCategorySetting(subsId: Long, categoryKey: Int, setting: CategorySetting) =
+        SubscriptionRepository.withSubscription(subsId) { subscription ->
+            require(subscription.categories.any { it.key == categoryKey }) {
+                throw SubscriptionException(SubscriptionFailureReason.CategoryMissing)
+            }
+            Db.withTransaction {
+                writeCategorySettings(subsId, setOf(categoryKey), setting)
+            }
+        }
+
+    private suspend fun writeCategorySettings(subsId: Long, categoryKeys: Set<Int>, setting: CategorySetting) {
+        categoryKeys.forEach { categoryKey ->
+            if (setting == CategorySetting.FollowSubscription) {
+                Db.subsCategoryConfigDao.deleteByCategoryKey(subsId, categoryKey)
+            } else {
+                Db.subsCategoryConfigDao.upsert(
+                    SubsCategoryConfig(
+                        subsId = subsId,
+                        categoryKey = categoryKey,
+                        enable = setting.value,
                     )
-                }
+                )
             }
         }
     }
@@ -91,7 +103,7 @@ object RuleGroupConfigService {
         value: ExcludeData,
         subscription: RawSubscription,
     ) {
-        updateExclusions(subscription, target) { current ->
+        updateGroupConfig(subscription, target) { current ->
             check(ExcludeData.parse(current.exclude) == expected) {
                 throw SubscriptionException(SubscriptionFailureReason.ExclusionConfigConflict)
             }
@@ -107,7 +119,7 @@ object RuleGroupConfigService {
         expectedExcluded: Boolean,
         excluded: Boolean,
     ) {
-        updateExclusions(subscription, target) { current ->
+        updateGroupConfig(subscription, target) { current ->
             val value = ExcludeData.parse(current.exclude)
             val key = appId to activityId
             check((key in value.activityIds) == expectedExcluded) {
@@ -120,7 +132,15 @@ object RuleGroupConfigService {
         }
     }
 
-    private suspend fun updateExclusions(
+    suspend fun setMatchAnyApp(
+        subscription: RawSubscription,
+        target: RuleGroupTarget.Global,
+        value: Boolean?,
+    ) = updateGroupConfig(subscription, target) {
+        (it as SubsGlobalGroupConfig).copy(matchAnyApp = value)
+    }
+
+    private suspend fun updateGroupConfig(
         subscription: RawSubscription,
         target: RuleGroupTarget,
         transform: (SubsGroupConfig) -> SubsGroupConfig,
@@ -165,28 +185,26 @@ object RuleGroupConfigService {
                 val subscription = sources.getValue(target.subsId)
                 val group = subscription.globalGroups.find { it.key == target.groupKey }
                     ?: return@mapNotNull null
-                val disabledRuleCount = RuleScopePolicy.globalAppDisabledRuleCount(group, target.appId)
-                val excludedByGroupName = target.appId in
-                        subscription.globalGroupAppGroupNameDisableMap[group.key].orEmpty()
-                val disablingName = group.disableIfAppGroupMatch?.ifEmpty { group.name }
+                val builtInDisabled = RuleScopePolicy.globalAppDisabled(group, target.appId)
+                val matchingGroups = subscription.globalGroupAppGroupMatches[group.key]?.get(target.appId).orEmpty()
+                val excludedByGroupName = matchingGroups.isNotEmpty()
                 val similarGroups = subscription.getAppGroups(target.appId).filter {
                     it.name.contains(group.name) || group.name.contains(it.name) ||
-                            (excludedByGroupName && disablingName != null &&
-                                    it.ignoreGlobalGroupMatch != true && it.name.startsWith(disablingName))
+                            it in matchingGroups
                 }.map {
                     val category = subscription.getCategory(it.name)
                     SimilarAppGroup(
                         it.name,
-                        policy.getGroupEnabled(
+                        RuleGroupPolicy.getGroupEnabled(
                             it, configIndex.groupConfig(RuleGroupTarget.App(target.subsId, target.appId, it.key)),
                             category, configIndex.categoryConfig(target.subsId, category?.key),
                         )
                     )
                 }
-                if (disabledRuleCount == 0 && !excludedByGroupName && similarGroups.isEmpty()) return@mapNotNull null
+                if (!builtInDisabled && !excludedByGroupName && similarGroups.isEmpty()) return@mapNotNull null
                 GlobalAppEnableWarning(
                     target, subscription.getApp(target.appId).name ?: target.appId,
-                    group.name, disabledRuleCount, group.rules.size.coerceAtLeast(1), excludedByGroupName, similarGroups,
+                    group.name, builtInDisabled, excludedByGroupName, similarGroups,
                 )
             }
         )
@@ -198,80 +216,105 @@ object RuleGroupConfigService {
                 val snapshot = SubscriptionConfigStore.capture()
                 val configIndex = RuleConfigIndex(snapshot)
                 request.checkCurrent(configIndex)
-                val appInfos = AppInfoRepository.snapshot?.apps.orEmpty()
-                val systemApps =
-                    appInfos.values.filter { it.isSystem }.mapTo(mutableSetOf()) { it.id }
-                val launcher = launcherAppIdFlow.value
-                val blockedApps = SettingsRepository.blockMatchAppList.value
-                var changed = 0
-                var unchanged = 0
-                var invalid = 0
-                var restricted = 0
-                request.expected.forEach { (target, expected) ->
-                    val subscription = request.subscriptions.getValue(target.subsId)
-                    check(configIndex.hasSubscription(target.subsId)) {
-                        throw SubscriptionException(SubscriptionFailureReason.SubscriptionMissing)
-                    }
-                    val groupTarget = when (target) {
-                        is RuleSwitchTarget.App -> null
-                        is RuleSwitchTarget.AppGroup -> RuleGroupTarget.App(
-                            target.subsId,
-                            target.appId,
-                            target.groupKey
-                        )
-
-                        is RuleSwitchTarget.GlobalGroup -> RuleGroupTarget.Global(
-                            target.subsId,
-                            target.groupKey
-                        )
-
-                        is RuleSwitchTarget.GlobalApp -> RuleGroupTarget.Global(
-                            target.subsId,
-                            target.groupKey,
-                            target.appId
-                        )
-                    }
-                    val group = groupTarget?.let {
-                        findGroup(subscription, it) ?: throw SubscriptionException(SubscriptionFailureReason.SelectedRulesMissing)
-                    }
-                    if (target is RuleSwitchTarget.App) {
-                        check(subscription.apps.any { it.id == target.appId }) {
-                            throw SubscriptionException(SubscriptionFailureReason.SubscriptionAppMissing)
-                        }
-                    }
-                    val state = if (group != null) policy.controlState(
-                        subscription, group, groupTarget.pageAppId, snapshot,
-                        appInfos[groupTarget.pageAppId],
-                        launcher, systemApps, groupTarget.pageAppId in blockedApps, configIndex,
-                    ) else null
-                    if (setting == RuleSetting.Enabled && state?.canEnable == false) {
-                        invalid++
-                    } else {
-                        if (setting != RuleSetting.Disabled && (state?.restrictions?.isNotEmpty() == true ||
-                                    configIndex.subscriptionEnabled(target.subsId) == false ||
-                                    (target is RuleSwitchTarget.App && target.appId in blockedApps))
-                        ) restricted++
-                        if (expected == setting) {
-                            unchanged++
-                        } else {
-                            when (target) {
-                                is RuleSwitchTarget.App -> SubscriptionConfigStore.setAppEnabled(
-                                    target.subsId,
-                                    target.appId,
-                                    setting.value
-                                )
-
-                                else -> updateConfig(checkNotNull(groupTarget)) {
-                                    RuleSwitchPolicy.updateGroup(target, it, setting)
-                                }
-                            }
-                            changed++
-                        }
-                    }
-                }
-                RuleSwitchResult(changed, unchanged, invalid, restricted)
+                applySettings(request.subscriptions, request.expected, snapshot, configIndex, setting)
             }
         }
+
+    suspend fun setSetting(target: RuleSwitchTarget, setting: RuleSetting): RuleSwitchResult =
+        SubscriptionRepository.withSubscription(target.subsId) { subscription ->
+            Db.withTransaction {
+                val snapshot = SubscriptionConfigStore.capture()
+                val configIndex = RuleConfigIndex(snapshot)
+                applySettings(
+                    mapOf(subscription.id to subscription),
+                    mapOf(target to configIndex.setting(target)),
+                    snapshot,
+                    configIndex,
+                    setting,
+                )
+            }
+        }
+
+    private suspend fun applySettings(
+        subscriptions: Map<Long, RawSubscription>,
+        previousSettings: Map<RuleSwitchTarget, RuleSetting>,
+        snapshot: SubscriptionConfigSnapshot,
+        configIndex: RuleConfigIndex,
+        setting: RuleSetting,
+    ): RuleSwitchResult {
+        val appInfos = AppInfoRepository.snapshot?.apps.orEmpty()
+        val systemApps =
+            appInfos.values.filter { it.isSystem }.mapTo(mutableSetOf()) { it.id }
+        val launcher = launcherAppIdFlow.value
+        val blockedApps = SettingsRepository.blockMatchAppList.value
+        var changed = 0
+        var unchanged = 0
+        var invalid = 0
+        var restricted = 0
+        previousSettings.forEach { (target, expected) ->
+            val subscription = subscriptions.getValue(target.subsId)
+            check(configIndex.hasSubscription(target.subsId)) {
+                throw SubscriptionException(SubscriptionFailureReason.SubscriptionMissing)
+            }
+            val groupTarget = when (target) {
+                is RuleSwitchTarget.App -> null
+                is RuleSwitchTarget.AppGroup -> RuleGroupTarget.App(
+                    target.subsId,
+                    target.appId,
+                    target.groupKey
+                )
+
+                is RuleSwitchTarget.GlobalGroup -> RuleGroupTarget.Global(
+                    target.subsId,
+                    target.groupKey
+                )
+
+                is RuleSwitchTarget.GlobalApp -> RuleGroupTarget.Global(
+                    target.subsId,
+                    target.groupKey,
+                    target.appId
+                )
+            }
+            val group = groupTarget?.let {
+                findGroup(subscription, it) ?: throw SubscriptionException(SubscriptionFailureReason.SelectedRulesMissing)
+            }
+            if (target is RuleSwitchTarget.App) {
+                check(subscription.apps.any { it.id == target.appId }) {
+                    throw SubscriptionException(SubscriptionFailureReason.SubscriptionAppMissing)
+                }
+            }
+            val state = if (group != null) RuleGroupPolicy.controlState(
+                subscription, group, groupTarget.pageAppId, snapshot,
+                appInfos[groupTarget.pageAppId],
+                launcher, systemApps, groupTarget.pageAppId in blockedApps, configIndex,
+            ) else null
+            if (setting == RuleSetting.Enabled && state?.canEnable == false) {
+                invalid++
+            } else {
+                if (setting != RuleSetting.Disabled && (state?.restrictions?.isNotEmpty() == true ||
+                            configIndex.subscriptionEnabled(target.subsId) == false ||
+                            (target is RuleSwitchTarget.App && target.appId in blockedApps))
+                ) restricted++
+                if (expected == setting) {
+                    unchanged++
+                } else {
+                    when (target) {
+                        is RuleSwitchTarget.App -> SubscriptionConfigStore.setAppEnabled(
+                            target.subsId,
+                            target.appId,
+                            setting.value
+                        )
+
+                        else -> updateConfig(checkNotNull(groupTarget)) {
+                            RuleSwitchPolicy.updateGroup(target, it, setting)
+                        }
+                    }
+                    changed++
+                }
+            }
+        }
+        return RuleSwitchResult(changed, unchanged, invalid, restricted)
+    }
 
     private fun findGroup(
         subscription: RawSubscription,
@@ -300,17 +343,23 @@ data class GlobalAppEnableWarning(
     val target: RuleSwitchTarget.GlobalApp,
     val appName: String,
     val groupName: String,
-    val disabledRuleCount: Int,
-    val ruleCount: Int,
+    val builtInDisabled: Boolean,
     val excludedByGroupName: Boolean,
     val similarGroups: List<SimilarAppGroup>,
-) {
-    val builtInDisabled: Boolean get() = disabledRuleCount > 0
-}
+)
 
+@Serializable
 data class RuleSwitchResult(
     val changed: Int,
     val unchanged: Int,
     val invalid: Int,
     val restricted: Int
-)
+) {
+    suspend fun failureMessage(): String? = if (invalid > 0)
+        getString(Res.string.rule_switch_skipped_count, invalid.toString()) else null
+
+    suspend fun description(): String =
+        getString(Res.string.rule_switch_changed_counts, changed.toString(), unchanged.toString()) +
+            (failureMessage()?.let { "，$it" } ?: "") +
+            (if (restricted > 0) getString(Res.string.rule_switch_restricted_count_suffix, restricted.toString()) else "")
+}

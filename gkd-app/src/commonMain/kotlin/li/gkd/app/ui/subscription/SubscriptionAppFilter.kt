@@ -4,7 +4,7 @@ import li.gkd.app.model.AppInfo
 import li.gkd.app.settings.SettingsStore
 import li.gkd.app.subscription.RawSubscription
 import li.gkd.app.ui.option.AppGroupOption
-import li.gkd.app.ui.option.AppSortOption
+import li.gkd.app.app.AppSort
 import li.gkd.app.util.SortUtils
 
 fun filterSubsApps(
@@ -15,8 +15,9 @@ fun filterSubsApps(
     appVisitOrderMap: Map<String, Int>,
     blockSet: Set<String>,
     appGroupType: (SettingsStore) -> Int,
-    sortType: (SettingsStore) -> AppSortOption,
+    sortType: (SettingsStore) -> AppSort,
     showBlockApps: (SettingsStore) -> Boolean,
+    triggerCounts: Map<String, Long> = emptyMap(),
 ): List<RawSubscription.RawApp> {
     var result = apps.sortedWith { a, b ->
         // 默认顺序: 已安装(有名字->无名字)->未安装(有名字(来自订阅)->无名字)
@@ -27,13 +28,14 @@ fun filterSubsApps(
         SortUtils.collator.compare(x, y)
     }
     result = when (sortType(settings)) {
-        AppSortOption.ByActionTime -> {
+        AppSort.ByActionTime -> {
             result.sortedBy { appActionOrderMap[it.id] ?: Int.MAX_VALUE }
         }
 
-        AppSortOption.ByAppName -> result
+        AppSort.ByTriggerCount -> result.sortedByDescending { triggerCounts[it.id] ?: 0L }
+        AppSort.ByAppName -> result
 
-        AppSortOption.ByUsedTime -> {
+        AppSort.ByUsedTime -> {
             result.sortedBy { appVisitOrderMap[it.id] ?: Int.MAX_VALUE }
         }
     }
