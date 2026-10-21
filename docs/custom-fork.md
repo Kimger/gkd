@@ -3,7 +3,7 @@
 本仓库 [Kimger/gkd](https://github.com/Kimger/gkd) 是 [gkd-kit/gkd](https://github.com/gkd-kit/gkd) 的个人自用 Fork。保留上游作者信息和 [GPL-3.0-only 许可证](../LICENSE)，在少量独立提交中维护自定义功能。
 
 - `main`：用于跟随上游，不直接加入自定义功能。
-- `dev/random-action-delay`：自用功能分支，包含随机延时和日志页面。
+- `dev/custom-enhancements`：自用功能分支，包含随机延时、日志页面、HyperOS 4 前台识别兼容修复及电脑临时接管自动化。
 - README 中的官方安装链接指向上游版本；本仓库功能需从自用分支构建。
 
 ## 规则级随机延时
@@ -78,7 +78,7 @@ Android 模块为 `gkd-android`，默认只构建 `gkd` 渠道。配置 Android 
 在仓库根目录执行：
 
 ```powershell
-git switch dev/random-action-delay
+git switch dev/custom-enhancements
 .\gradlew.bat :gkd-android:assembleGkdRelease --no-configuration-cache
 ```
 
@@ -117,7 +117,7 @@ git switch main
 git merge --ff-only upstream/main
 git push origin main
 
-git switch dev/random-action-delay
+git switch dev/custom-enhancements
 git merge main
 ```
 
@@ -129,7 +129,7 @@ git merge main
 .\gradlew.bat :gkd-app:jvmTest --tests "li.gkd.app.rule.RuleRuntimeTest" --tests "li.gkd.app.rule.TaskForegroundPolicyTest" --tests "li.gkd.app.logging.RandomDelayLogTest"
 # 完成当前会话的 SDK 与签名配置后：
 .\gradlew.bat :gkd-android:assembleGkdRelease --no-configuration-cache
-git push origin dev/random-action-delay
+git push origin dev/custom-enhancements
 ```
 
 以上命令展示日常同步流程，不能替代上游变更所需的其他验证。项目开发约束仍遵循 [AGENTS.md](../AGENTS.md)。
