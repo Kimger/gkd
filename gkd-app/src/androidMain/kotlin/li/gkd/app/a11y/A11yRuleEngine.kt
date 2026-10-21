@@ -61,7 +61,7 @@ class A11yRuleEngine(private val service: A11yCommonImpl) {
 
     fun onForegroundConfirmed() {
         // The event consumer may have returned while the window confirmation was pending.
-        startQueryJob(byForced = true)
+        startQueryJob()
     }
 
     val safeActiveWindow: AccessibilityNodeInfo?
