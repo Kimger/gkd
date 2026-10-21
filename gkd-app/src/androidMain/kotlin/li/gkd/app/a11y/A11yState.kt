@@ -26,6 +26,7 @@ import li.gkd.app.rule.ActivityRule
 import li.gkd.app.rule.ResolvedRule
 import li.gkd.app.rule.RuleSummary
 import li.gkd.app.rule.TopActivity
+import li.gkd.app.rule.acceptTaskForegroundApp
 import li.gkd.app.service.updateTopTaskAppId
 import li.gkd.app.settings.SettingsRepository
 import li.gkd.app.ui.rule.statusText
@@ -104,10 +105,19 @@ object A11yState {
         @CallSite loc: String = "",
     ): Unit = synchronized(lock) {
         val t = System.currentTimeMillis()
+        val oldActivity = activityRuleFlow.value.topActivity
         if (scene == ActivityScene.TaskStack) {
+            if (!acceptTaskForegroundApp(appId, oldActivity.appId, launcherAppId) {
+                    A11yRuntime.getRoot()?.packageName?.toString()
+                }) {
+                LogUtils.d(
+                    "Ignored conflicting launcher task report",
+                    "taskAppId=$appId, activeWindowAppId=${oldActivity.appId}",
+                )
+                return@synchronized
+            }
             updateTopTaskAppId(appId)
         }
-        val oldActivity = activityRuleFlow.value.topActivity
         val oldActivityRule = activityRuleFlow.value
         val idChanged =
             (scene == ActivityScene.ScreenOn || appId != oldActivityRule.topActivity.appId)
