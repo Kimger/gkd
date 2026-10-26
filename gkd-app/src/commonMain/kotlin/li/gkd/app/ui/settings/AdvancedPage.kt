@@ -173,6 +173,12 @@ fun AdvancedPage(
                 showTop = false,
             )
             GkTextSwitch(
+                title = stringResource(Res.string.auxiliary_a11y_title),
+                subtitle = stringResource(Res.string.auxiliary_a11y_description),
+                checked = store.allowAuxiliaryA11y,
+                onCheckedChange = host::setAuxiliaryA11yEnabled,
+            )
+            GkTextSwitch(
                 title = stringResource(Res.string.status_overlay_keep_alive),
                 checked = store.enableStatusOverlay,
                 onCheckedChange = vm::requestStatusOverlayEnabled,
@@ -276,6 +282,8 @@ expect fun UiHost.setSnapshotButtonEnabled(enabled: Boolean)
 expect fun UiHost.setHttpServiceEnabled(enabled: Boolean)
 
 expect fun UiHost.setRemoteAutomationControlEnabled(enabled: Boolean)
+
+expect fun UiHost.setAuxiliaryA11yEnabled(enabled: Boolean)
 
 expect fun UiHost.httpServerPortChanged()
 

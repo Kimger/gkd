@@ -21,6 +21,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import li.gkd.app.a11y.A11yCommonImpl
 import li.gkd.app.a11y.A11yRuleEngine
 import li.gkd.app.a11y.A11yRuntime
+import li.gkd.app.automation.AuxiliaryA11yController
 import li.gkd.app.a11y.A11yState
 import li.gkd.app.a11y.currentTopActivity
 import li.gkd.app.a11y.updateTopActivity
@@ -92,6 +93,12 @@ abstract class A11yService : AccessibilityService(), A11yCommonImpl {
         }
 
     private var tempShutdownFlag = false
+    private var auxiliaryShutdownFlag = false
+
+    fun shutdownAuxiliary() {
+        auxiliaryShutdownFlag = true
+        shutdown(true)
+    }
 
     override fun shutdown(temp: Boolean) {
         if (temp) {
@@ -111,7 +118,7 @@ abstract class A11yService : AccessibilityService(), A11yCommonImpl {
             isRunning.value = true
             if (currentAppUseA11y) {
                 updateEnableAutomator(true)
-            } else {
+            } else if (!AuxiliaryA11yController.shouldRun) {
                 ToastUtils.show(Res.string.a11y_automation_mode_notice.getSync(), forced = true)
                 scope.launch {
                     delay(1)
@@ -133,7 +140,9 @@ abstract class A11yService : AccessibilityService(), A11yCommonImpl {
             }
             isRunning.value = false
             releaseKeepAliveOverlayAfterHandoff()
-            if (tempShutdownFlag) {
+            if (auxiliaryShutdownFlag) {
+                ToastUtils.show(Res.string.auxiliary_a11y_stopped.getSync())
+            } else if (tempShutdownFlag) {
                 ToastUtils.show(Res.string.a11y_partially_disabled.getSync())
             } else {
                 ToastUtils.show(Res.string.a11y_stopped.getSync())
@@ -193,6 +202,11 @@ abstract class A11yService : AccessibilityService(), A11yCommonImpl {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        // The OS may finish binding after automation has already stopped or the option changed.
+        if (!currentAppUseA11y && !AuxiliaryA11yController.shouldRun) {
+            shutdown(true)
+            return
+        }
         LogUtils.d("onA11yConnected -> ${this::class.simpleName}")
         instance = this
         attachKeepAliveOverlay()

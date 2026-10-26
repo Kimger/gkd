@@ -90,6 +90,11 @@
     <string name="action_toast_enable">启用触发提示</string>
     <string name="action_toast_style_custom">自定义样式</string>
     <string name="action_toast_style_system">系统样式</string>
+    <string name="action_toast_style_woodfish">猫猫木鱼</string>
+    <string name="action_toast_woodfish_merit">功德 +1</string>
+    <string name="action_toast_woodfish_hint">透明背景、轻敲猫猫头，显示“功德 +1”后渐隐，约 1.8 秒。不播放声音；需要无障碍或悬浮窗权限，否则回退到文字提示。此样式不使用下方文案。</string>
+    <string name="action_toast_play_preview">播放提示效果</string>
+    <string name="action_toast_woodfish_size">木鱼大小：%1$s dp</string>
     <string name="action_toast_style_hint">系统样式可能因触发频繁而被限制；自定义样式不可用时会回退到系统样式</string>
     <string name="action_toast_text">提示文案</string>
     <string name="action_toast_preview">文案预览</string>
@@ -1063,7 +1068,12 @@
     <string name="global_control_enabled">开关已开启</string>
     <string name="global_rule_enable_name_list_warning">此应用已有以下应用规则，因此这条全局规则默认关闭：</string>
     <string name="remote_automation_control_title">允许电脑临时接管自动化</string>
-    <string name="remote_automation_control_description">通过 ADB 广播暂停与恢复自动化；30 秒未收到心跳后尝试恢复，其他自动化仍占用时等待释放。默认关闭。</string>
+    <string name="auxiliary_a11y_title">自动化模式下允许无障碍辅助运行</string>
+    <string name="auxiliary_a11y_description">自动开启普通无障碍辅助兼容，规则仍由自动化执行。</string>
+    <string name="auxiliary_a11y_stopped">辅助无障碍已关闭</string>
+    <string name="auxiliary_a11y_permission_required">自动开启辅助无障碍需要可用的特权服务和写入安全设置权限，请启动特权服务后重试</string>
+    <string name="auxiliary_a11y_start_failed">辅助无障碍未能启动，请检查系统受限设置或手动开启 GKD 无障碍</string>
+    <string name="remote_automation_control_description">允许电脑临时暂停自动化，任务结束或心跳超时后尝试恢复。</string>
     <string name="simulation_services">服务生命周期（模拟）</string>
     <string name="simulation_services_description">HTTP 服务实际监听本机端口；其他服务仅模拟启停与授权，不执行 Android 截屏或悬浮窗</string>
     <string name="simulation_service_status">%1$s（模拟）：%2$s</string>

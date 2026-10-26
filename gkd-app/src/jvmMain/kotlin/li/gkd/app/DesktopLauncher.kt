@@ -61,6 +61,7 @@ import li.gkd.app.ui.component.GkSettingItem
 import li.gkd.app.ui.component.GkTermsAcceptDialog
 import li.gkd.app.ui.component.GkTextSwitch
 import li.gkd.app.ui.component.GkToastHost
+import li.gkd.app.ui.component.GkCatWoodfishToast
 import li.gkd.app.ui.component.GkTopAppBar
 import li.gkd.app.ui.component.GkTriStateSwitch
 import li.gkd.app.ui.component.LocalOverlayBackHandler
@@ -371,6 +372,21 @@ fun runDesktop(args: Array<String>) {
                                             ),
                                         ) { toastContent() }
                                     })
+                                    val woodfish = runtime.catWoodfishToast
+                                    woodfish.request?.let { request ->
+                                        Popup(
+                                            alignment = Alignment.BottomCenter,
+                                            properties = PopupProperties(focusable = false),
+                                        ) {
+                                            key(request) {
+                                                GkCatWoodfishToast(
+                                                    modifier = Modifier.padding(bottom = (size.height * 0.12f).dp),
+                                                    bodySize = request.size,
+                                                    onFinished = { woodfish.dismiss(request) },
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

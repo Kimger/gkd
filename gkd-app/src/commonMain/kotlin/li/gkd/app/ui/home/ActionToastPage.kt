@@ -18,6 +18,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,6 +28,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -42,6 +46,7 @@ import li.gkd.app.ui.platform.hideIme
 import li.gkd.app.ui.util.ActionToastTemplate
 import li.gkd.app.util.ToastUtils
 import org.jetbrains.compose.resources.stringResource
+import kotlin.math.roundToInt
 
 @Composable
 fun ActionToastPage(
@@ -52,6 +57,8 @@ fun ActionToastPage(
 
     val enabled by vm.enabled.collectAsStateWithLifecycle()
     val systemStyle by vm.systemStyle.collectAsStateWithLifecycle()
+    val woodfishStyle by vm.woodfishStyle.collectAsStateWithLifecycle()
+    val woodfishSize by vm.woodfishSize.collectAsStateWithLifecycle()
     val text by vm.text.collectAsStateWithLifecycle()
     val previewText =
         ActionToastTemplate.render(
@@ -118,24 +125,50 @@ fun ActionToastPage(
                 Column(Modifier.selectableGroup()) {
                     ActionToastStyleOption(
                         stringResource(Res.string.action_toast_style_custom),
-                        !systemStyle,
+                        !systemStyle && !woodfishStyle,
                     ) {
                         vm.setSystemStyle(false)
                         previewActionToast(previewText, false)
                     }
                     ActionToastStyleOption(
                         stringResource(Res.string.action_toast_style_system),
-                        systemStyle,
+                        systemStyle && !woodfishStyle,
                     ) {
                         vm.setSystemStyle(true)
                         previewActionToast(previewText, true)
                     }
+                    ActionToastStyleOption(
+                        stringResource(Res.string.action_toast_style_woodfish),
+                        woodfishStyle,
+                    ) {
+                        vm.setWoodfishStyle()
+                        previewActionToast(previewText, false, true, woodfishSize)
+                    }
                 }
                 Text(
-                    stringResource(Res.string.action_toast_style_hint),
+                    stringResource(
+                        if (woodfishStyle) Res.string.action_toast_woodfish_hint
+                        else Res.string.action_toast_style_hint
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (woodfishStyle) {
+                    val sizeLabel = stringResource(Res.string.action_toast_woodfish_size, woodfishSize.toString())
+                    Text(sizeLabel)
+                    Slider(
+                        value = woodfishSize.toFloat(),
+                        onValueChange = { vm.setWoodfishSize(it.roundToInt()) },
+                        valueRange = 20f..80f,
+                        steps = 11,
+                        modifier = Modifier.semantics { contentDescription = sizeLabel },
+                    )
+                }
+                OutlinedButton(
+                    onClick = { previewActionToast(previewText, systemStyle, woodfishStyle, woodfishSize) },
+                ) {
+                    Text(stringResource(Res.string.action_toast_play_preview))
+                }
             }
             OutlinedTextField(
                 value = text,

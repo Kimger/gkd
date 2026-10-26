@@ -5,6 +5,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import li.gkd.app.appScope
 import li.gkd.app.automation.RemoteAutomationControl
+import li.gkd.app.automation.AuxiliaryA11yController
 import li.gkd.app.permission.PermissionStates
 import li.gkd.app.platform.service.ServiceController
 import li.gkd.app.service.ActivityService
@@ -46,6 +47,10 @@ actual fun UiHost.setRemoteAutomationControlEnabled(enabled: Boolean) {
     appScope.launchUi(Dispatchers.IO) {
         RemoteAutomationControl.setEnabled(enabled)
     }
+}
+
+actual fun UiHost.setAuxiliaryA11yEnabled(enabled: Boolean) {
+    appScope.launchUi { AuxiliaryA11yController.setEnabled(enabled) }
 }
 
 actual fun UiHost.setActivityMonitorEnabled(enabled: Boolean) {

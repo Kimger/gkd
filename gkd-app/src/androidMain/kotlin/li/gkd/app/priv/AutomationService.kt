@@ -20,10 +20,12 @@ import li.gkd.app.a11y.A11yRuleEngine
 import li.gkd.app.a11y.A11yRuntime
 import li.gkd.app.appScope
 import li.gkd.app.automation.RemoteAutomationControl
+import li.gkd.app.automation.AuxiliaryA11yController
 import li.gkd.app.record.RuntimeRecordRepository
 import li.gkd.app.resources.*
 import li.gkd.app.store.AppStore.updateEnableAutomator
 import li.gkd.app.settings.AutomatorMode
+import li.gkd.app.service.currentAppUseAuxiliaryA11y
 import li.gkd.app.util.AndroidTarget
 import li.gkd.app.util.LogUtils
 import li.gkd.app.util.SystemServiceDump
@@ -121,6 +123,7 @@ class AutomationService private constructor(
             disconnect()
         } finally {
             uiAutomationFlow.compareAndSet(this, null)
+            AuxiliaryA11yController.onAutomationStopped()
             appScope.launchLogged {
                 scope.coroutineContext[Job]?.join()
                 RuntimeRecordRepository.flush()
@@ -155,7 +158,13 @@ class AutomationService private constructor(
             synchronized(connectLock) {
                 if (RemoteAutomationControl.isPaused) return@synchronized
                 uiAutomationOccupiedFlow.value = false
-                if (uiAutomationFlow.value?.connected == true) {
+                val existing = uiAutomationFlow.value
+                if (existing?.connected == true) {
+                    if (currentAppUseAuxiliaryA11y) {
+                        // Returning from an A11y scope also invalidates its delayed handoff.
+                        A11yRuntime.onA11yConnected(existing)
+                        AuxiliaryA11yController.onAutomationStarted()
+                    }
                     return@synchronized
                 }
                 uiAutomationFlow.value?.shutdown()
@@ -186,6 +195,8 @@ class AutomationService private constructor(
                         !privilegeContext.serverLifecycleBinder.pingBinder()
                     ) {
                         instance.shutdown(true)
+                    } else {
+                        AuxiliaryA11yController.onAutomationStarted()
                     }
                 } catch (e: Exception) {
                     instance.shutdown(true)

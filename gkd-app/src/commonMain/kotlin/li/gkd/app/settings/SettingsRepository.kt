@@ -167,13 +167,28 @@ object SettingsRepository {
         return ScreenshotConfigResult.Saved
     }
 
-    suspend fun saveActionToast(enabled: Boolean, useSystemToast: Boolean, text: String): Boolean {
+    suspend fun saveActionToast(
+        enabled: Boolean,
+        useSystemToast: Boolean,
+        text: String,
+        useCatWoodfishToast: Boolean = false,
+        catWoodfishSize: Int = 40,
+    ): Boolean {
         require(text.isNotEmpty() && text.length <= 64)
+        require(catWoodfishSize in 20..80)
         val store = settings.value
         val changed =
-            store.toastWhenClick != enabled || store.useSystemToast != useSystemToast || store.actionToast != text
+            store.toastWhenClick != enabled || store.useSystemToast != useSystemToast ||
+                store.actionToast != text || store.useCatWoodfishToast != useCatWoodfishToast ||
+                store.catWoodfishSize != catWoodfishSize
         updateSettings {
-            it.copy(toastWhenClick = enabled, useSystemToast = useSystemToast, actionToast = text)
+            it.copy(
+                toastWhenClick = enabled,
+                useSystemToast = useSystemToast,
+                actionToast = text,
+                useCatWoodfishToast = useCatWoodfishToast,
+                catWoodfishSize = catWoodfishSize,
+            )
         }
         awaitPersistence()
         return changed

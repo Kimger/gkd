@@ -13,6 +13,7 @@ import kotlinx.coroutines.withTimeout
 import li.gkd.app.subscription.SubscriptionJson.json
 import li.gkd.app.ui.settings.AppIdListEditor
 import li.gkd.app.ui.settings.AppWhitelistViewModel
+import li.gkd.app.ui.home.ActionToastViewModel
 import java.io.File
 import java.io.IOException
 import kotlin.test.assertEquals
@@ -35,6 +36,19 @@ object SettingsRepositoryChecks {
 
         val owner = ViewModelStore()
         try {
+            // Real file persistence and backup round-trip, without resetting the repository lifecycle.
+            assertFalse(repo.settings.value.allowAuxiliaryA11y)
+            repo.updateSettings { it.copy(allowAuxiliaryA11y = true) }
+            repo.awaitPersistence()
+            assertTrue(diskSettings().allowAuxiliaryA11y)
+            val auxiliaryBackup = repo.exportBackupEntries()
+            repo.updateSettings { it.copy(allowAuxiliaryA11y = false) }
+            repo.awaitPersistence()
+            assertFalse(diskSettings().allowAuxiliaryA11y)
+            repo.withBackupRestore(auxiliaryBackup) {}
+            assertTrue(diskSettings().allowAuxiliaryA11y)
+            repo.updateSettings { it.copy(allowAuxiliaryA11y = false) }
+            repo.awaitPersistence()
             repo.updateSettings {
                 it.copy(
                     enableMatch = false,
@@ -192,6 +206,39 @@ object SettingsRepositoryChecks {
             settings.saveActionToast(true, false, "My draft")
             assertEquals("My draft", diskSettings().actionToast)
             assertFalse(diskSettings().enableDynamicColor)
+            // Use the production editor and actual settings file: switching only style must persist,
+            // preserve the existing text, and allow switching back without leaving the opt-in active.
+            val toastEditor = ActionToastViewModel().also { owner.put("toast-editor", it) }
+            toastEditor.setWoodfishStyle()
+            toastEditor.setWoodfishSize(25)
+            assertTrue(toastEditor.hasChanges())
+            assertTrue(toastEditor.save())
+            assertTrue(diskSettings().useCatWoodfishToast)
+            assertFalse(diskSettings().useSystemToast)
+            assertEquals(25, diskSettings().catWoodfishSize)
+            assertEquals("My draft", diskSettings().actionToast)
+            toastEditor.setWoodfishSize(55)
+            assertTrue(toastEditor.save())
+            assertEquals(55, diskSettings().catWoodfishSize)
+            toastEditor.setSystemStyle(true)
+            assertTrue(toastEditor.save())
+            assertFalse(diskSettings().useCatWoodfishToast)
+            assertTrue(diskSettings().useSystemToast)
+            assertEquals(55, diskSettings().catWoodfishSize)
+            toastEditor.setSystemStyle(false)
+            assertTrue(toastEditor.save())
+            assertFalse(diskSettings().useCatWoodfishToast)
+            assertFalse(diskSettings().useSystemToast)
+            for (size in listOf(20, 80)) {
+                toastEditor.setWoodfishSize(size)
+                toastEditor.save()
+                assertEquals(size, diskSettings().catWoodfishSize)
+            }
+            val beforeInvalidToast = repo.settings.value
+            assertFailsWith<IllegalArgumentException> {
+                repo.saveActionToast(true, false, "My draft", true, 0)
+            }
+            assertEquals(beforeInvalidToast, repo.settings.value)
             val beforeInvalid = repo.settings.value
             assertFalse(repo.saveHttpServerPort("65536"))
             assertFalse(repo.saveHttpServerPort("text"))

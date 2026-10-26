@@ -99,10 +99,14 @@ fun settingsPage(
                     subtitle =
                         listOf(
                                 if (!store.toastWhenClick) stringResource(Res.string.turned_off)
+                                else if (store.useCatWoodfishToast)
+                                    stringResource(Res.string.action_toast_style_woodfish)
                                 else if (store.useSystemToast)
                                     stringResource(Res.string.action_toast_style_system)
                                 else "",
-                                store.actionToast.lineSequence().joinToString(" ").trim(),
+                                if (store.useCatWoodfishToast)
+                                    stringResource(Res.string.action_toast_woodfish_merit)
+                                else store.actionToast.lineSequence().joinToString(" ").trim(),
                             )
                             .filter { it.isNotEmpty() }
                             .joinToString(" · "),

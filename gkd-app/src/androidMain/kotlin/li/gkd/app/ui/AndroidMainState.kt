@@ -105,7 +105,9 @@ class AndroidMainState(
 
     private fun applyAutomatorMode(option: AutomatorMode) {
         SettingsRepository.updateAutomatorMode(option.value)
-        A11yService.instance?.shutdown()
+        if (option != AutomatorMode.Automation || !SettingsRepository.settings.value.allowAuxiliaryA11y) {
+            A11yService.instance?.shutdown()
+        }
         uiAutomationFlow.value?.shutdown()
     }
 

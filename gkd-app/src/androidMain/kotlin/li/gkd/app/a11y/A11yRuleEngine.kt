@@ -408,6 +408,8 @@ class A11yRuleEngine(private val service: A11yCommonImpl) {
                 rule.rule.action
                 ?: rule.rule.position?.let { ActionPerformer.ClickCenter.action }
                 ?: rule.rule.swipeArg?.let { ActionPerformer.Swipe.action })
+            // A retained helper may lose ownership while its node query is still in progress.
+            if (!effective) return
             val actionResult = performer.perform(target, rule.rule)
             if (actionResult.result) {
                 val topActivity = currentTopActivity

@@ -29,6 +29,7 @@ import li.gkd.app.subscription.SubscriptionDefaults
 import li.gkd.app.subscription.SubscriptionRepository
 import li.gkd.app.ui.image.ImageLoaders
 import li.gkd.app.ui.component.ToastState
+import li.gkd.app.ui.component.CatWoodfishToastState
 import li.gkd.app.util.LogUtils
 import li.gkd.db.Db
 import li.gkd.db.SubscriptionIds
@@ -42,6 +43,7 @@ class DesktopRuntime(
     private val scope = applicationScope()
     val appCatalog = DesktopAppCatalog(simulator)
     val toast = ToastState()
+    val catWoodfishToast = CatWoodfishToastState()
     val httpService = DesktopHttpService(simulator, scope, toast::show)
     val services = DesktopServiceSimulation(simulator, httpService::setEnabled) { enabled ->
         SettingsRepository.updateSettings { it.copy(enableStatusService = enabled) }

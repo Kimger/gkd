@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import li.gkd.app.META
 import li.gkd.app.a11y.currentTopActivity
+import li.gkd.app.a11y.A11yRuntime
 import li.gkd.app.a11y.systemRecentCn
 import li.gkd.app.app
 import li.gkd.app.appScope
@@ -22,6 +23,7 @@ import li.gkd.app.priv.privilegeContextFlow
 import li.gkd.app.priv.uiAutomationFlow
 import li.gkd.app.resources.*
 import li.gkd.app.settings.SettingsRepository
+import li.gkd.app.settings.AppScopePolicy
 import li.gkd.app.settings.SettingsRepository.settings
 import li.gkd.app.ui.app.showAccessRestrictedSettingsDialog
 import li.gkd.app.ui.share.launchUi
@@ -160,6 +162,9 @@ fun fixRestartAutomatorService(@CallSite loc: String = "") = modifyA11yRun(loc =
 val currentAppUseA11y
     get() = settings.value.useA11y || topAppIdFlow.value in SettingsRepository.actualA11yScopeAppList
 
+val currentAppUseAuxiliaryA11y
+    get() = AppScopePolicy.auxiliaryA11y(settings.value, currentAppUseA11y)
+
 val currentAppBlocked
     get() = settings.value.enableBlockA11yAppList && topAppIdFlow.value in SettingsRepository.actualBlockA11yAppList
 
@@ -174,6 +179,9 @@ private fun innerForcedUpdateA11yService(disabled: Boolean) {
     }
     if (currentAppUseA11y) {
         if (A11yService.isRunning.value) {
+            if (settings.value.allowAuxiliaryA11y) {
+                A11yService.instance?.takeUnless(A11yRuntime::isEffective)?.let(A11yRuntime::onA11yConnected)
+            }
             return
         }
         if (!PermissionStates.writeSecureSettings.stateFlow.value) {

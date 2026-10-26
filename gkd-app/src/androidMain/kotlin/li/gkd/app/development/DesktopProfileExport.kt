@@ -191,8 +191,8 @@ object DesktopProfileExport {
         val items = Db.subsItemDao.queryAll()
         val settings = JSONObject(settingsJson.encodeToString(SettingsRepository.settings.value))
         val settingKeys = listOf(
-            "enableDarkTheme", "enableDynamicColor", "toastWhenClick", "useSystemToast",
-            "actionToast", "excludeFromRecents", "enableBlockA11yAppList", "useCustomNotifText",
+            "enableDarkTheme", "enableDynamicColor", "toastWhenClick", "useSystemToast", "allowAuxiliaryA11y",
+            "actionToast", "useCatWoodfishToast", "catWoodfishSize", "excludeFromRecents", "enableBlockA11yAppList", "useCustomNotifText",
             "customNotifTitle", "customNotifText", "enableMatch", "enableStatusService", "appSort",
             "appGroupType", "showBlockApp"
         )

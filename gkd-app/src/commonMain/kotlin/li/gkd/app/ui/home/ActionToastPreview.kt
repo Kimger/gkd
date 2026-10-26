@@ -1,3 +1,5 @@
 package li.gkd.app.ui.home
 
-expect fun previewActionToast(text: String, system: Boolean)
+expect fun previewActionToast(
+    text: String, system: Boolean, woodfish: Boolean = false, woodfishSize: Int = 40,
+)

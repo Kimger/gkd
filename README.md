@@ -1,6 +1,6 @@
 # gkd
 
-> 本仓库是基于 [gkd-kit/gkd](https://github.com/gkd-kit/gkd) 的个人自用修改版，扩展功能维护在 [`dev/custom-enhancements`](https://github.com/Kimger/gkd/tree/dev/custom-enhancements) 分支，包含规则级随机延时、随机延时日志、HyperOS 4 前台识别兼容修复及电脑临时接管自动化。用法、签名构建及同步上游方法见 [自用版本说明](docs/custom-fork.md)。下方官方安装链接提供上游版本，不包含本仓库的扩展功能。
+> 本仓库是基于 [gkd-kit/gkd](https://github.com/gkd-kit/gkd) 的个人自用修改版，扩展功能维护在 [`dev/custom-enhancements`](https://github.com/Kimger/gkd/tree/dev/custom-enhancements) 分支，包含规则级随机延时、随机延时日志、HyperOS 4 前台识别兼容修复、电脑临时接管自动化及猫猫木鱼触发提示。用法、签名构建及同步上游方法见 [自用版本说明](docs/custom-fork.md)。下方官方安装链接提供上游版本，不包含本仓库的扩展功能。
 
 <p align="center">
 <a href="https://gkd.li/"><img src="https://e.gkd.li/2a0a7787-f2dd-4529-a885-93f3b8c857c3" alt="GKD.LI" width="40%" /></a>

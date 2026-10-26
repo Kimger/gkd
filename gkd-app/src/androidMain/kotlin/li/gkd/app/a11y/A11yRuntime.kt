@@ -16,6 +16,10 @@ import li.gkd.app.inspection.InspectionFailure
 import li.gkd.app.priv.privilegeContextFlow
 import li.gkd.app.priv.uiAutomationFlow
 import li.gkd.app.service.A11yService
+import li.gkd.app.service.currentAppUseA11y
+import li.gkd.app.service.currentAppUseAuxiliaryA11y
+import li.gkd.app.settings.AppScopePolicy
+import li.gkd.app.settings.SettingsRepository
 import li.gkd.app.settings.AutomatorMode
 import li.gkd.app.util.ThreadUtils
 import li.gkd.selector.MatchOptions
@@ -28,10 +32,15 @@ object A11yRuntime {
     private val latestServiceTime = atomic(0L)
 
     val service: A11yCommonImpl?
-        get() = uiAutomationFlow.value?.takeIf(::isEffective) ?: A11yService.instance
+        get() = if (currentAppUseAuxiliaryA11y) {
+            // A helper is never a fallback executor, including while automation is paused.
+            uiAutomationFlow.value?.takeIf(::isEffective)
+        } else uiAutomationFlow.value?.takeIf(::isEffective) ?: A11yService.instance
 
     fun isEffective(service: A11yCommonImpl): Boolean =
-        latestServiceMode.value == service.mode.value
+        AppScopePolicy.effectiveMode(
+            SettingsRepository.settings.value, currentAppUseA11y, latestServiceMode.value,
+        ) == service.mode.value
 
     fun hasOtherService(service: A11yCommonImpl): Boolean = when (service.mode) {
         AutomatorMode.A11y -> uiAutomationFlow.value != null
@@ -39,6 +48,7 @@ object A11yRuntime {
     }
 
     fun onA11yConnected(service: A11yCommonImpl) {
+        if (service.mode == AutomatorMode.A11y && currentAppUseAuxiliaryA11y) return
         // Preserve the engine's initial view of the other service before switching modes.
         val engine = service.ruleEngine
         val serviceTime = System.currentTimeMillis()
@@ -48,8 +58,14 @@ object A11yRuntime {
         ThreadUtils.runMainOrPost(1000L) {// 共存 1000ms, 等待另一个服务稳定
             if (latestServiceTime.value == serviceTime) {
                 when (service.mode) {
-                    AutomatorMode.A11y -> uiAutomationFlow.value?.shutdown(true)
-                    AutomatorMode.Automation -> A11yService.instance?.shutdown(true)
+                    AutomatorMode.A11y -> if (
+                        !SettingsRepository.settings.value.allowAuxiliaryA11y || currentAppUseA11y
+                    ) {
+                        uiAutomationFlow.value?.shutdown(true)
+                    }
+                    AutomatorMode.Automation -> if (!currentAppUseAuxiliaryA11y) {
+                        A11yService.instance?.shutdown(true)
+                    }
                 }
             }
         }

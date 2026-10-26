@@ -22,6 +22,7 @@ import com.hjq.toast.Toaster
 import com.hjq.toast.style.WhiteToastStyle
 import li.gkd.app.app
 import li.gkd.app.permission.PermissionStates
+import li.gkd.app.resources.*
 import li.gkd.app.rule.ResolvedRule
 import li.gkd.app.service.A11yService
 import li.gkd.app.settings.SettingsRepository.actionCount
@@ -107,7 +108,9 @@ object AndroidToastUtils {
                     rule.g.group.name,
                     actionCount.value,
                 )
-                if (settings.value.useSystemToast) {
+                if (settings.value.useCatWoodfishToast) {
+                    showWoodfish(settings.value.catWoodfishSize)
+                } else if (settings.value.useSystemToast) {
                     showSystem(text)
                 } else {
                     showA11y(text)
@@ -116,9 +119,66 @@ object AndroidToastUtils {
         }
     }
 
-    fun previewAction(text: CharSequence, useSystemToast: Boolean) {
+    fun previewAction(
+        text: CharSequence, useSystemToast: Boolean, woodfish: Boolean = false, woodfishSize: Int = 40,
+    ) {
         ThreadUtils.runMainOrPost {
-            if (useSystemToast) showSystem(text) else showA11y(text)
+            if (woodfish) showWoodfish(woodfishSize)
+            else if (useSystemToast) showSystem(text) else showA11y(text)
+        }
+    }
+
+    private fun showWoodfish(size: Int) {
+        cancelCustomToast?.invoke()
+        cacheToast?.cancel()
+        cacheToast = null
+        val wm = A11yService.instance?.wm
+            ?: if (PermissionStates.drawOverlays.updateAndGet()) app.windowManager else null
+        if (wm == null) {
+            showSystem(Res.string.action_toast_woodfish_merit.getSync())
+            return
+        }
+        lateinit var cancel: () -> Unit
+        val window = CatWoodfishToastWindow(wm, size) {
+            if (cancelCustomToast === cancel) cancel()
+        }
+        cancel = {
+            cancelCustomToast = null
+            window.close()
+        }
+        val params = WindowManager.LayoutParams().apply {
+            type = if (wm == app.windowManager) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+            }
+            format = PixelFormat.TRANSLUCENT
+            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+            packageName = app.packageName
+            width = WindowManager.LayoutParams.WRAP_CONTENT
+            height = WindowManager.LayoutParams.WRAP_CONTENT
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            y = toastYOffset
+            windowAnimations = 0
+            if (type == WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY && AndroidTarget.S) {
+                alpha = app.inputManager.maximumObscuringOpacityForTouch
+            }
+        }
+        try {
+            window.show(params)
+            cancelCustomToast = cancel
+        } catch (e: WindowManager.BadTokenException) {
+            LogUtils.d("Cat woodfish overlay unavailable", e)
+            showSystem(Res.string.action_toast_woodfish_merit.getSync())
+        } catch (e: SecurityException) {
+            LogUtils.d("Cat woodfish overlay permission denied", e)
+            showSystem(Res.string.action_toast_woodfish_merit.getSync())
+        }
+        // Also remove the window when system animation scale is 0 or rendering is suspended.
+        ThreadUtils.runMainOrPost(triggerInterval) {
+            if (cancelCustomToast === cancel) cancel()
         }
     }
 
