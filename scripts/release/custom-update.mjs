@@ -7,8 +7,8 @@ export function createUpdate({ repository, versionCode, versionName, apkName, fi
   if (!Number.isSafeInteger(versionCode) || versionCode < 1 || versionCode > 2100000000) {
     throw new Error('Invalid version code');
   }
-  if (!/^custom-\d+$/.test(versionName) || versionName !== `custom-${versionCode}`) {
-    throw new Error('Version name/code mismatch');
+  if (!/^\d+\.\d+\.\d+(?:-[\w.-]+)?-custom\.[1-9]\d*$/.test(versionName)) {
+    throw new Error('Invalid custom version name');
   }
   if (apkName !== `gkd-${versionName}.apk`) throw new Error('Unexpected APK name');
   if (!Number.isSafeInteger(fileSize) || fileSize <= 0) throw new Error('Empty APK');

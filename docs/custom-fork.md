@@ -83,7 +83,7 @@
 
 仓库默认分支使用 `dev/custom-enhancements`，`main` 继续作为官方主线同步分支。进入 **Actions → Publish custom GKD → Run workflow**，填写更新说明即可发布；无论操作页面选择哪个分支，构建源码固定取 `dev/custom-enhancements`。普通推送不会触发此发布流程，原有上游构建流程仍保留。
 
-流程仅构建 `gkd` 渠道：运行 JVM 测试、签名构建、校验现有 AppMarket 签名指纹，再以草稿上传 APK 和 `update.json`，上传完成才公开为最新 Release。标签使用 `custom-<versionCode>`，不触发上游 `v*` 发布流程。版本号按 UTC 分钟生成，并确保高于已有自用发布；版本名为 `custom-<versionCode>`。请勿更换签名或手动降低版本号；云端高版本安装后，本地构建也需传入更高的 `GKD_VERSION_CODE` 才能升级。
+流程仅构建 `gkd` 渠道：依次运行 JVM 测试、签名构建、校验现有 AppMarket 签名指纹，再以草稿上传 APK 和 `update.json`，上传完成才公开为最新 Release。标签使用 `custom-<versionCode>`，不触发上游 `v*` 发布流程。版本号取源码中的官方版本号与上一自用 Release 版本号的较大值加一：当前首次为 `95`，之后为 `96`、`97`。版本名称沿用源码中的官方版本，并追加自用序号，例如 `1.13.0-beta-2-custom.1`（序号为自用版本号减官方版本号）。请勿更换签名或手动降低版本号；本地覆盖云端版本时也需传入更高的 `GKD_VERSION_CODE`。
 
 Actions Secrets 使用 `GKD_STORE_FILE_BASE64`、`GKD_STORE_PASSWORD`、`GKD_KEY_ALIAS`、`GKD_KEY_PASSWORD`，签名文件仅在临时目录解码并在任务结束时清理，禁止提交至代码。签名缺失或指纹不符时发布失败，不回退 Debug 签名。不要对不信任的提交运行带签名的发布流程。
 

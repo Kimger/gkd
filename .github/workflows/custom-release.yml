@@ -58,8 +58,7 @@ jobs:
           done
           umask 077
           printf '%s' "$STORE_BASE64" | base64 --decode > "$RUNNER_TEMP/gkd-custom.jks"
-          # Minute-based codes remain above old local builds and increase across workflow changes.
-          code=$(( $(date -u +%s) / 60 ))
+          previous=0
           if ! latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" 2>/dev/null); then
             # A repository without releases returns a JSON error body, not an empty string.
             if [[ "$(printf '%s' "$latest" | jq -r '.status // empty')" != '404' ]]; then
@@ -72,16 +71,16 @@ jobs:
             previous_url=$(printf '%s' "$latest" | jq -r '.assets[] | select(.name == "update.json") | .browser_download_url')
             if [[ -n "$previous_url" ]]; then
               previous=$(curl --fail --location --retry 3 "$previous_url" | jq -er '.versionCode')
-              if (( code <= previous )); then code=$((previous + 1)); fi
             fi
           fi
-          echo "GKD_VERSION_CODE=$code" >> "$GITHUB_ENV"
-          echo "GKD_VERSION_NAME=custom-$code" >> "$GITHUB_ENV"
+          PREVIOUS_VERSION_CODE="$previous" node scripts/release/custom-version.mjs
           echo "GKD_STORE_FILE=$RUNNER_TEMP/gkd-custom.jks" >> "$GITHUB_ENV"
           echo "RELEASE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: Run JVM tests
-        run: ./gradlew :gkd-app:jvmTest --no-configuration-cache
+        run: |
+          node --test scripts/release/custom-update.test.mjs
+          ./gradlew :gkd-app:jvmTest --no-configuration-cache
 
       - name: Upload test reports
         if: always()
