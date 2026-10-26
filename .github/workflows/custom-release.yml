@@ -60,7 +60,14 @@ jobs:
           printf '%s' "$STORE_BASE64" | base64 --decode > "$RUNNER_TEMP/gkd-custom.jks"
           # Minute-based codes remain above old local builds and increase across workflow changes.
           code=$(( $(date -u +%s) / 60 ))
-          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" 2>/dev/null || true)
+          if ! latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" 2>/dev/null); then
+            # A repository without releases returns a JSON error body, not an empty string.
+            if [[ "$(printf '%s' "$latest" | jq -r '.status // empty')" != '404' ]]; then
+              echo 'Unable to query previous release; refusing to guess its version.' >&2
+              exit 1
+            fi
+            latest=''
+          fi
           if [[ -n "$latest" ]]; then
             previous_url=$(printf '%s' "$latest" | jq -r '.assets[] | select(.name == "update.json") | .browser_download_url')
             if [[ -n "$previous_url" ]]; then
