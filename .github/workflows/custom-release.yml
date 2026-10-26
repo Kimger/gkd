@@ -80,8 +80,21 @@ jobs:
           echo "GKD_STORE_FILE=$RUNNER_TEMP/gkd-custom.jks" >> "$GITHUB_ENV"
           echo "RELEASE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
-      - name: Test and build signed gkd release
-        run: ./gradlew :gkd-app:jvmTest :gkd-android:assembleGkdRelease --no-configuration-cache
+      - name: Run JVM tests
+        run: ./gradlew :gkd-app:jvmTest --no-configuration-cache
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: custom-release-test-reports
+          path: |
+            gkd-app/build/reports/tests/jvmTest/
+            gkd-app/build/test-results/jvmTest/
+          if-no-files-found: ignore
+
+      - name: Build signed gkd release
+        run: ./gradlew :gkd-android:assembleGkdRelease --no-configuration-cache
         env:
           GKD_STORE_PASSWORD: ${{ secrets.GKD_STORE_PASSWORD }}
           GKD_KEY_ALIAS: ${{ secrets.GKD_KEY_ALIAS }}
