@@ -37,6 +37,10 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
+      - uses: android-actions/setup-android@v4
+        with:
+          log-accepted-android-sdk-licenses: false
+
       - name: Install Android SDK components
         run: sdkmanager 'platforms;android-37' 'build-tools;37.0.0'
 
