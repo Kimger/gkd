@@ -4,6 +4,7 @@ import com.android.build.api.dsl.LibraryExtension
 import com.android.build.gradle.AppPlugin
 import com.android.build.gradle.LibraryPlugin
 import li.gkd.gradle.gitInfo
+import li.gkd.gradle.buildProperty
 import org.jetbrains.kotlin.compose.compiler.gradle.ComposeCompilerGradlePluginExtension
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
@@ -27,8 +28,13 @@ plugins {
     alias(libs.plugins.littlerobots.version)
 }
 
-extra["gkdVersionName"] = "1.13.0-beta-2" + project.gitInfo.versionNameSuffix.orEmpty()
-extra["gkdVersionCode"] = 94
+extra["gkdVersionName"] = buildProperty("GKD_VERSION_NAME").orNull
+    ?: ("1.13.0-beta-2" + project.gitInfo.versionNameSuffix.orEmpty())
+extra["gkdVersionCode"] = buildProperty("GKD_VERSION_CODE").orNull?.let {
+    requireNotNull(it.toIntOrNull()?.takeIf { code -> code in 1..2100000000 }) {
+        "GKD_VERSION_CODE must be a positive Android version code"
+    }
+} ?: 94
 
 object Cfg {
     val compileSdk get() = 37

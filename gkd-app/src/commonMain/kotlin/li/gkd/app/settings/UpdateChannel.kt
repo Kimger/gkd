@@ -10,8 +10,9 @@ enum class UpdateChannel(
     override val labelResource: StringResource,
     val url: String,
 ) : Option<Int> {
-    Stable(0, Res.string.update_channel_stable, "https://registry.npmmirror.com/@gkd-kit/app/latest/files/index.json"),
-    Beta(1, Res.string.update_channel_beta, "https://registry.npmmirror.com/@gkd-kit/app-beta/latest/files/index.json");
+    // Retain persisted channel values; both select this fork's manually approved releases.
+    Stable(0, Res.string.update_channel_stable, "https://github.com/Kimger/gkd/releases/latest/download/update.json"),
+    Beta(1, Res.string.update_channel_beta, "https://github.com/Kimger/gkd/releases/latest/download/update.json");
 
     override val options get() = entries
 }

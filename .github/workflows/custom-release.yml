@@ -1,0 +1,113 @@
+name: Publish custom GKD
+
+on:
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: '本次自用版更新说明'
+        required: true
+        default: '自用版功能与兼容性更新'
+        type: string
+
+concurrency:
+  group: custom-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: github.repository == 'Kimger/gkd'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: dev/custom-enhancements
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Install Android SDK components
+        run: sdkmanager 'platforms;android-37' 'build-tools;37.0.0'
+
+      - name: Prepare signing and version
+        env:
+          STORE_BASE64: ${{ secrets.GKD_STORE_FILE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.GKD_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.GKD_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.GKD_KEY_PASSWORD }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for name in STORE_BASE64 STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [[ -z "${!name}" ]]; then echo "Missing signing secret: $name" >&2; exit 1; fi
+          done
+          umask 077
+          printf '%s' "$STORE_BASE64" | base64 --decode > "$RUNNER_TEMP/gkd-custom.jks"
+          # Minute-based codes remain above old local builds and increase across workflow changes.
+          code=$(( $(date -u +%s) / 60 ))
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" 2>/dev/null || true)
+          if [[ -n "$latest" ]]; then
+            previous_url=$(printf '%s' "$latest" | jq -r '.assets[] | select(.name == "update.json") | .browser_download_url')
+            if [[ -n "$previous_url" ]]; then
+              previous=$(curl --fail --location --retry 3 "$previous_url" | jq -er '.versionCode')
+              if (( code <= previous )); then code=$((previous + 1)); fi
+            fi
+          fi
+          echo "GKD_VERSION_CODE=$code" >> "$GITHUB_ENV"
+          echo "GKD_VERSION_NAME=custom-$code" >> "$GITHUB_ENV"
+          echo "GKD_STORE_FILE=$RUNNER_TEMP/gkd-custom.jks" >> "$GITHUB_ENV"
+          echo "RELEASE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Test and build signed gkd release
+        run: ./gradlew :gkd-app:jvmTest :gkd-android:assembleGkdRelease --no-configuration-cache
+        env:
+          GKD_STORE_PASSWORD: ${{ secrets.GKD_STORE_PASSWORD }}
+          GKD_KEY_ALIAS: ${{ secrets.GKD_KEY_ALIAS }}
+          GKD_KEY_PASSWORD: ${{ secrets.GKD_KEY_PASSWORD }}
+
+      - name: Verify and stage release assets
+        env:
+          RELEASE_NOTES: ${{ inputs.notes }}
+        run: |
+          set -euo pipefail
+          mkdir -p .local/custom-release
+          apk=gkd-android/build/outputs/apk/gkd/release/gkd-android-gkd-release.apk
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --print-certs "$apk" | tee .local/custom-release/signature.txt
+          grep -Fqi 'e5744b966f3ab8b521b90e6ac8fe1bcc1c522da5602cfb08551745b5451dd58d' .local/custom-release/signature.txt
+          export RELEASE_APK="gkd-$GKD_VERSION_NAME.apk"
+          cp "$apk" ".local/custom-release/$RELEASE_APK"
+          node scripts/release/custom-update.mjs
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: custom-gkd-${{ env.GKD_VERSION_CODE }}
+          path: .local/custom-release/*
+          include-hidden-files: true
+          if-no-files-found: error
+
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="custom-$GKD_VERSION_CODE"
+          gh release create "$tag" .local/custom-release/*.apk .local/custom-release/update.json \
+            --target "$(git rev-parse HEAD)" --title "GKD $GKD_VERSION_NAME" \
+            --notes-file .local/custom-release/notes.md --draft
+          gh release edit "$tag" --draft=false --prerelease=false --latest
+
+      - name: Clean signing file
+        if: always()
+        run: rm -f -- "$RUNNER_TEMP/gkd-custom.jks"

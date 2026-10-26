@@ -77,6 +77,18 @@
 
 ## 签名与 Release 构建
 
+### GitHub 手动发布与应用内更新
+
+自用版更新源为 `https://github.com/Kimger/gkd/releases/latest/download/update.json`。保留旧的稳定/测试渠道配置值，两者均读取自己的最新手动发布，不再下载官方签名包。首次需手动安装包含此地址的自用版；GitHub 访问不畅时可直接从 Releases 下载。
+
+仓库默认分支使用 `dev/custom-enhancements`，`main` 继续作为官方主线同步分支。进入 **Actions → Publish custom GKD → Run workflow**，填写更新说明即可发布；无论操作页面选择哪个分支，构建源码固定取 `dev/custom-enhancements`。普通推送不会触发此发布流程，原有上游构建流程仍保留。
+
+流程仅构建 `gkd` 渠道：运行 JVM 测试、签名构建、校验现有 AppMarket 签名指纹，再以草稿上传 APK 和 `update.json`，上传完成才公开为最新 Release。标签使用 `custom-<versionCode>`，不触发上游 `v*` 发布流程。版本号按 UTC 分钟生成，并确保高于已有自用发布；版本名为 `custom-<versionCode>`。请勿更换签名或手动降低版本号；云端高版本安装后，本地构建也需传入更高的 `GKD_VERSION_CODE` 才能升级。
+
+Actions Secrets 使用 `GKD_STORE_FILE_BASE64`、`GKD_STORE_PASSWORD`、`GKD_KEY_ALIAS`、`GKD_KEY_PASSWORD`，签名文件仅在临时目录解码并在任务结束时清理，禁止提交至代码。签名缺失或指纹不符时发布失败，不回退 Debug 签名。不要对不信任的提交运行带签名的发布流程。
+
+本地可通过环境变量或 Gradle 属性覆盖 `GKD_VERSION_CODE`、`GKD_VERSION_NAME`；未设置时沿用上游版本规则。更新信息生成器测试：`node --test scripts/release/custom-update.test.mjs`。云端成品在 Releases，本机交付目录仍是 `Y:\GKD`，不会自动映射云端目录。
+
 Android 模块为 `gkd-android`，默认只构建 `gkd` 渠道。配置 Android SDK 后，通过环境变量或本地 Gradle 属性提供以下字段：
 
 | 字段 | 用途 |
