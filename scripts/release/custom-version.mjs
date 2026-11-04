@@ -16,7 +16,10 @@ export function nextVersion(source, previousCode = 0) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const version = nextVersion(readFileSync('build.gradle.kts', 'utf8'), Number(process.env.PREVIOUS_VERSION_CODE || 0));
+  // Version 102 was distributed locally before the GitHub release.
+  const localReleaseCode = 102;
+  const previousCode = Math.max(localReleaseCode, Number(process.env.PREVIOUS_VERSION_CODE || 0));
+  const version = nextVersion(readFileSync('build.gradle.kts', 'utf8'), previousCode);
   appendFileSync(process.env.GITHUB_ENV,
     `GKD_VERSION_CODE=${version.versionCode}\nGKD_VERSION_NAME=${version.versionName}\n`);
 }
