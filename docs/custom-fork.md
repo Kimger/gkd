@@ -115,6 +115,31 @@ Release 包名为 `li.songe.gkd`。官方版与自签名版签名不同，首次
 
 安装升级后，若 Shizuku 已授权但自动化未运行，可在 GKD 中停止并重新启动特权服务，再确认工作模式与规则开关。
 
+## Shizuku 开机自启与 GKD 自动恢复
+
+以下步骤在小米 17 Pro Max（HyperOS 4 / Android 17）、Shizuku `13.7.0-thedjchi` 和 GKD 自用版 `1.13.0-beta-7-custom.3`（102）上验证通过。
+
+1. 在 Shizuku 中完成一次无线调试配对，并通过「无线调试」成功启动一次，让它记住 ADB 启动方式。
+2. 在 HyperOS 中允许 Shizuku 自启动。如果 Shizuku 内有「开机启动」选项，也将它开启。
+3. 确认主用户的 Shizuku 已获得 `WRITE_SECURE_SETTINGS`。电脑连接这台手机后，可以用以下命令检查。主用户对应的结果应为 `granted=true`。
+
+   ```powershell
+   adb shell dumpsys package moe.shizuku.privileged.api | Select-String 'WRITE_SECURE_SETTINGS'
+   ```
+
+   如果尚未授权，可通过已授权的 ADB 连接执行以下命令，再检查一次。
+
+   ```sh
+   adb shell pm grant --user 0 moe.shizuku.privileged.api android.permission.WRITE_SECURE_SETTINGS
+   ```
+
+4. 在 GKD 的「特权服务 → 外部 → Shizuku」授权并成功启动一次，选择「自动化」工作模式，确认自动化和规则匹配开关已开启。
+5. 重启手机并等 Wi-Fi 连上。先不打开 Shizuku 或 GKD，直接进微信测试原来能触发的规则。
+
+这次重启后，通过 ADB 确认 Shizuku 服务、GKD 特权服务和 GKD 的 UiAutomation 会话均已恢复，随后微信规则也成功触发。测试时辅助无障碍关闭。Shizuku 能否在开机时自动建立无线 ADB 连接，仍取决于所装版本、系统是否放行自启动，以及开机时的网络状态。
+
+GKD 收到 Shizuku 就绪回调后会立即尝试恢复特权服务，跳过先前失败产生的冷却时间。如果用户已主动关闭 GKD 特权服务，则尊重关闭状态。若重启后规则未触发，可以先通过 ADB 区分 Shizuku 服务是否启动、GKD 特权服务是否连接，以及 UiAutomation 会话是否建立。
+
 ## 自动化模式下的辅助无障碍
 
 入口：**高级设置 → 后台运行 → 自动化模式下允许无障碍辅助运行**，默认关闭。
@@ -123,7 +148,7 @@ Release 包名为 `li.songe.gkd`。官方版与自签名版签名不同，首次
 
 普通无障碍仅用于辅助兼容，自动化区域的规则、动作和快照仍由 UiAutomation 负责；自动化断开、暂停时不回退到辅助服务执行，停止时关闭辅助服务。原有无障碍作用域、屏蔽名单继续生效；显式使用普通无障碍的作用域仍按原模式切换。关闭开关恢复原来的互斥行为。
 
-这来自 HyperOS 4 / Android 17 上的对照结果：微信在自动化单独运行时无法提供有效节点，而自动化与自身普通无障碍同时运行时可以读取。不保证其他系统或版本也需要、或能通过此方式改善；不将现象归因为未经证实的系统白名单。
+早期在 HyperOS 4 / Android 17 上测试时，微信需要同时开启普通无障碍才能读取节点。自用版 102 已在同一台手机上验证，仅使用自动化也能触发微信规则，可按实际兼容情况选择是否开启辅助。系统关闭辅助无障碍时，GKD 会保留自动化总开关。
 
 ## 电脑临时接管自动化
 
