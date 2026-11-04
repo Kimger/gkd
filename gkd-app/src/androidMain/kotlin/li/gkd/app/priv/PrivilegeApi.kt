@@ -111,6 +111,7 @@ suspend fun recoverPrivilegeContext() {
 fun initPrivilege() {
     PrivilegeConfig.crashLogDirectory = AndroidStorage.privilegeCrashDirectory
     PrivilegeOwnerLifecycle.initialize()
+    listenForShizukuPrivilegeRecovery()
 
     appScope.launchLogged(Dispatchers.IO) {
         var wasConnected = false

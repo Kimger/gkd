@@ -5,9 +5,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import li.gkd.app.appScope
+import li.gkd.app.app
+import li.gkd.app.priv.shizuku.GkdShizukuExternalStartProvider
 import li.gkd.app.util.launchLogged
 import priv.kit.core.Privilege
 import priv.kit.ui.PrivilegeUi
+import rikka.shizuku.Shizuku
 
 private const val RECOVERY_COOLDOWN_MILLIS = 10 * 60 * 1000L
 private val recoveryMutex = Mutex()
@@ -17,11 +20,24 @@ fun requestPrivilegeRecovery() {
     appScope.launchLogged(Dispatchers.IO) { recoverPrivilege() }
 }
 
-suspend fun recoverPrivilege() = recoveryMutex.withLock {
+fun listenForShizukuPrivilegeRecovery() {
+    Shizuku.addBinderReceivedListenerSticky {
+        appScope.launchLogged(Dispatchers.IO) {
+            recoverPrivilege(shizukuReady = true)
+        }
+    }
+}
+
+suspend fun recoverPrivilege(shizukuReady: Boolean = false) = recoveryMutex.withLock {
     Privilege.serverState.value?.let {
         return@withLock it
     }
-    if (SystemClock.elapsedRealtime() < recoveryAllowedAt || !PrivilegeUi.desiredEnabled.value) {
+    if (!PrivilegeUi.desiredEnabled.value) {
+        return@withLock null
+    }
+    if (shizukuReady) {
+        if (!GkdShizukuExternalStartProvider.snapshot(app).canStart) return@withLock null
+    } else if (SystemClock.elapsedRealtime() < recoveryAllowedAt) {
         return@withLock null
     }
     PrivilegeUi.startSilently(gkdPrivilegeUiConfig).also { serverInfo ->
