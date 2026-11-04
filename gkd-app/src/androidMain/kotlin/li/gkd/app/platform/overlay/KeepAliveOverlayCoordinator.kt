@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
-import li.gkd.app.util.LogUtils
+import li.gkd.app.logging.LogUtils
 
 object KeepAliveOverlayCoordinator {
     enum class Source {
@@ -32,16 +32,20 @@ object KeepAliveOverlayCoordinator {
         owner: Any,
         context: Context,
         windowType: Int,
-    ): Boolean {
+    ): Result<Unit> {
         val current = get(source)
-        if (current?.owner === owner) return true
-        val overlay = runCatching { KeepAliveOverlay(context, windowType) }
+        if (current?.owner === owner) return Result.success(Unit)
+        val overlay = runCatching {
+            KeepAliveOverlay(context, windowType)
+        }
             .onFailure(LogUtils::d)
-            .getOrNull() ?: return false
+            .getOrElse {
+                return Result.failure(it)
+            }
         current?.overlay?.close()
         set(source, AttachedOverlay(owner, overlay))
         attachedState(source).value = true
-        return true
+        return Result.success(Unit)
     }
 
     suspend fun releaseAfterHandoff(
@@ -67,10 +71,11 @@ object KeepAliveOverlayCoordinator {
         current.overlay.close()
     }
 
-    private fun get(source: Source): AttachedOverlay? = when (source) {
-        Source.Status -> statusOverlay
-        Source.Accessibility -> accessibilityOverlay
-    }
+    private fun get(source: Source): AttachedOverlay? =
+        when (source) {
+            Source.Status -> statusOverlay
+            Source.Accessibility -> accessibilityOverlay
+        }
 
     private fun set(source: Source, value: AttachedOverlay?) {
         when (source) {
@@ -79,10 +84,11 @@ object KeepAliveOverlayCoordinator {
         }
     }
 
-    private fun attachedState(source: Source): MutableStateFlow<Boolean> = when (source) {
-        Source.Status -> statusAttached
-        Source.Accessibility -> accessibilityAttached
-    }
+    private fun attachedState(source: Source): MutableStateFlow<Boolean> =
+        when (source) {
+            Source.Status -> statusAttached
+            Source.Accessibility -> accessibilityAttached
+        }
 
     private data class AttachedOverlay(
         val owner: Any,
@@ -98,16 +104,19 @@ object KeepAliveOverlayCoordinator {
         private var attached = false
 
         init {
-            val layoutParams = WindowManager.LayoutParams().apply {
-                type = windowType
-                format = PixelFormat.TRANSLUCENT
-                flags = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                gravity = Gravity.START or Gravity.TOP
-                width = 1
-                height = 1
-                packageName = context.packageName
-            }
+            val layoutParams =
+                WindowManager.LayoutParams().apply {
+                    type = windowType
+                    alpha = 0f
+                    format = PixelFormat.TRANSLUCENT
+                    flags =
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                    gravity = Gravity.START or Gravity.TOP
+                    width = 1
+                    height = 1
+                    packageName = context.packageName
+                }
             windowManager.addView(view, layoutParams)
             attached = true
         }
@@ -116,8 +125,7 @@ object KeepAliveOverlayCoordinator {
         override fun close() {
             if (!attached) return
             attached = false
-            runCatching { windowManager.removeView(view) }
-                .onFailure(LogUtils::d)
+            runCatching { windowManager.removeView(view) }.onFailure(LogUtils::d)
         }
     }
 

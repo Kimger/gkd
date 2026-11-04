@@ -8,10 +8,10 @@ import li.gkd.gradle.buildProperty
 import org.jetbrains.kotlin.compose.compiler.gradle.ComposeCompilerGradlePluginExtension
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
-import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 import org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsEnvSpec
 import org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsPlugin
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
+import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
 plugins {
     alias(libs.plugins.cmp) apply false
@@ -29,34 +29,47 @@ plugins {
 }
 
 extra["gkdVersionName"] = buildProperty("GKD_VERSION_NAME").orNull
-    ?: ("1.13.0-beta-2" + project.gitInfo.versionNameSuffix.orEmpty())
+    ?: ("1.13.0-beta-7" + project.gitInfo.versionNameSuffix.orEmpty())
 extra["gkdVersionCode"] = buildProperty("GKD_VERSION_CODE").orNull?.let {
     requireNotNull(it.toIntOrNull()?.takeIf { code -> code in 1..2100000000 }) {
         "GKD_VERSION_CODE must be a positive Android version code"
     }
-} ?: 94
+} ?: 99
 
 object Cfg {
-    val compileSdk get() = 37
-    val buildToolsVersion get() = "37.0.0"
-    val minSdk get() = 26
-    val targetSdk get() = compileSdk
+    val compileSdk
+        get() = 37
+
+    val buildToolsVersion
+        get() = "37.0.0"
+
+    val minSdk
+        get() = 26
+
+    val targetSdk
+        get() = compileSdk
+
     val sourceVersion = JavaVersion.VERSION_11
-    val targetVersion get() = sourceVersion
-    val kotlinTargetVersion get() = JvmTarget.fromTarget(targetVersion.majorVersion)
+    val targetVersion
+        get() = sourceVersion
+
+    val kotlinTargetVersion
+        get() = JvmTarget.fromTarget(targetVersion.majorVersion)
+
     // 统一应用于所有子项目；未依赖对应库的模块允许出现 unresolved opt-in marker 警告。
-    val kotlinCompilerArgs = listOf(
-        "-opt-in=kotlin.contracts.ExperimentalContracts",
-        "-opt-in=kotlinx.coroutines.FlowPreview",
-        "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
-        "-opt-in=kotlinx.serialization.ExperimentalSerializationApi",
-        "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
-        "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi",
-        "-opt-in=androidx.compose.ui.ExperimentalComposeUiApi",
-        "-opt-in=androidx.compose.foundation.layout.ExperimentalLayoutApi",
-        "-XXLanguage:+ExplicitBackingFields",
-        "-Xexpect-actual-classes",
-    )
+    val kotlinCompilerArgs =
+        listOf(
+            "-opt-in=kotlin.contracts.ExperimentalContracts",
+            "-opt-in=kotlinx.coroutines.FlowPreview",
+            "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
+            "-opt-in=kotlinx.serialization.ExperimentalSerializationApi",
+            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
+            "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi",
+            "-opt-in=androidx.compose.ui.ExperimentalComposeUiApi",
+            "-opt-in=androidx.compose.foundation.layout.ExperimentalLayoutApi",
+            "-XXLanguage:+ExplicitBackingFields",
+            "-Xexpect-actual-classes",
+        )
 }
 
 val androidKmpLibraryPluginId = libs.plugins.android.kotlin.multiplatform.library.get().pluginId
@@ -119,12 +132,16 @@ subprojects {
         }
     }
     plugins.withId(androidKmpLibraryPluginId) {
-        extensions.getByType(KotlinMultiplatformExtension::class.java).targets.withType(
-            KotlinMultiplatformAndroidLibraryTarget::class.java
-        ).configureEach {
-            compileSdk = Cfg.compileSdk
-            buildToolsVersion = Cfg.buildToolsVersion
-            minSdk = Cfg.minSdk
-        }
+        extensions
+            .getByType(KotlinMultiplatformExtension::class.java)
+            .targets
+            .withType(
+                KotlinMultiplatformAndroidLibraryTarget::class.java,
+            )
+            .configureEach {
+                compileSdk = Cfg.compileSdk
+                buildToolsVersion = Cfg.buildToolsVersion
+                minSdk = Cfg.minSdk
+            }
     }
 }

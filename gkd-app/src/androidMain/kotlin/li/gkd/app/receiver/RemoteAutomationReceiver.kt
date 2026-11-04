@@ -7,7 +7,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import li.gkd.app.appScope
 import li.gkd.app.automation.RemoteAutomationControl
-import li.gkd.app.util.LogUtils
+import li.gkd.app.logging.LogUtils
 import li.gkd.app.util.launchLogged
 
 class RemoteAutomationReceiver : BroadcastReceiver() {

@@ -12,7 +12,7 @@ import li.gkd.app.logging.RandomDelayLog
 import li.gkd.app.logging.readRandomDelayLogs
 import li.gkd.app.storage.appStorage
 import li.gkd.app.ui.state.BaseViewModel
-import li.gkd.app.util.LogUtils
+import li.gkd.app.logging.LogUtils
 
 class RandomDelayLogViewModel : BaseViewModel() {
     val pagingDataFlow = Pager(PagingConfig(pageSize = 100, enablePlaceholders = false)) {

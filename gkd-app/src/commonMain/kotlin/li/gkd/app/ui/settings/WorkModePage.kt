@@ -1,6 +1,5 @@
 package li.gkd.app.ui.settings
 
-import li.gkd.app.META
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -27,115 +26,72 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import li.gkd.app.ui.component.gkTopAppBarScroll
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import li.gkd.app.model.findOption
 import li.gkd.app.network.AppLinks
 import li.gkd.app.resources.*
+import li.gkd.app.settings.AutomatorMode
 import li.gkd.app.settings.SettingsRepository
 import li.gkd.app.ui.MainViewModel
-import li.gkd.app.ui.component.GkAlertDialog
 import li.gkd.app.ui.component.GkAnimatedBooleanContent
+import li.gkd.app.ui.component.GkIcon
 import li.gkd.app.ui.component.GkIconButton
 import li.gkd.app.ui.component.GkIcons
 import li.gkd.app.ui.component.GkPageBottomSpace
 import li.gkd.app.ui.component.GkPermissionRestrictionDialog
 import li.gkd.app.ui.component.GkScaffold
 import li.gkd.app.ui.component.GkTopAppBar
+import li.gkd.app.ui.component.gkTopAppBarScroll
 import li.gkd.app.ui.home.dashboardPlatformState
-import li.gkd.app.ui.navigation.A11YScopeAppListRoute
+import li.gkd.app.ui.navigation.CompanionScopeAppListRoute
 import li.gkd.app.ui.navigation.PrivilegeServiceRoute
-import li.gkd.app.settings.AutomatorMode
-import li.gkd.app.model.findOption
 import li.gkd.app.ui.platform.RefreshPermissions
-import li.gkd.app.ui.platform.UiHost
-import li.gkd.app.ui.platform.changeAutomatorMode
-import li.gkd.app.ui.platform.openA11ySettings
+import li.gkd.app.ui.style.iconTextSize
 import li.gkd.app.ui.style.itemHorizontalPadding
 import li.gkd.app.ui.style.surfaceCardColors
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
-fun WorkModePage(host: UiHost) {
+fun WorkModePage() {
     val mainVm = MainViewModel.requireCurrent()
     val vm = viewModel { WorkModeViewModel() }
     RefreshPermissions()
     val platform = dashboardPlatformState()
     val store by SettingsRepository.settings.collectAsStateWithLifecycle()
-    val automatorMode: AutomatorMode =
-        AutomatorMode.entries.findOption(store.automatorMode)
+    val automatorMode: AutomatorMode = AutomatorMode.entries.findOption(store.automatorMode)
 
     val onPrivilege: () -> Unit = { mainVm.navigator.navigate(PrivilegeServiceRoute) }
 
-    val appName: String = META.appName
-
     val automationAvailable =
         platform.privilegeAvailable && platform.privilegeCapabilities?.restricted != true
-    val showPrivilegeRequired by vm.showPrivilegeRequired.collectAsStateWithLifecycle()
-    if (showPrivilegeRequired)
+    val privilegeAction by vm.privilegeAction.collectAsStateWithLifecycle()
+    if (privilegeAction != null)
         GkPermissionRestrictionDialog(
             privilegeAvailable = platform.privilegeAvailable,
             capabilities = platform.privilegeCapabilities,
             appRestrictions = platform.appRestrictions,
-            onDismiss = { vm.setShowPrivilegeRequired(false) },
+            onDismiss = { vm.setPrivilegeAction(null) },
             onPrivilege = onPrivilege,
-        )
-    val showKeepAlive by vm.showKeepAlive.collectAsStateWithLifecycle()
-    if (showKeepAlive) {
-        val tutorial =
-            stringResource(Res.string.keep_alive_tile_description, appName) +
-                stringResource(Res.string.keep_alive_setup_heading) +
-                stringResource(Res.string.keep_alive_setup_open_tiles) +
-                stringResource(
-                    Res.string.keep_alive_setup_add_tile,
-                    appName,
-                ) +
-                stringResource(Res.string.keep_alive_setup_place_tile)
-        GkAlertDialog(
-            onDismissRequest = { vm.setShowKeepAlive(false) },
-            title = { Text(stringResource(Res.string.keep_alive_title)) },
-            text = {
-                Text(
-                    tutorial +
-                        if (platform.writeSecureSettings) ""
-                        else
-                            stringResource(Res.string.keep_alive_permission_missing) +
-                                stringResource(Res.string.keep_alive_permission_description)
-                )
-            },
-            confirmButton = {
+            description = Res.string.automation_mode_privilege_notice,
+            alternativeButton = {
                 TextButton(
                     onClick = {
-                        vm.setShowKeepAlive(false)
-                        if (!platform.writeSecureSettings) onPrivilege()
-                    }
+                        vm.setPrivilegeAction(null)
+                        SettingsRepository.updateAutomatorMode(AutomatorMode.Automation.value)
+                    },
                 ) {
                     Text(
-                        stringResource(
-                            if (platform.writeSecureSettings) Res.string.action_understood
-                            else Res.string.settings_go_to
-                        )
+                        stringResource(Res.string.action_switch_only),
                     )
                 }
             },
-            dismissButton =
-                if (platform.writeSecureSettings) null
-                else {
-                    {
-                        TextButton(
-                            onClick = {
-                                vm.setShowKeepAlive(false)
-                            }
-                        ) {
-                            Text(stringResource(Res.string.action_close))
-                        }
-                    }
-                },
         )
-    }
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     GkScaffold(
         modifier = Modifier.gkTopAppBarScroll(scrollBehavior),
@@ -158,11 +114,11 @@ fun WorkModePage(host: UiHost) {
             modifier =
                 Modifier.fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(contentPadding)
+                    .padding(contentPadding),
         ) {
             Card(
                 modifier = Modifier.padding(horizontal = itemHorizontalPadding).fillMaxWidth(),
-                onClick = { host.changeAutomatorMode(AutomatorMode.A11y) },
+                onClick = { SettingsRepository.updateAutomatorMode(AutomatorMode.A11y.value) },
                 colors = surfaceCardColors,
             ) {
                 Row(
@@ -185,52 +141,57 @@ fun WorkModePage(host: UiHost) {
                         style = MaterialTheme.typography.titleMedium,
                     )
                 }
-                Text(
-                    modifier = Modifier.padding(horizontal = 20.dp),
-                    text = stringResource(Res.string.work_mode_basic),
-                    style = MaterialTheme.typography.titleSmall,
-                )
-                TextListItem(
-                    modifier = Modifier.padding(horizontal = 20.dp).padding(top = 8.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                    list =
-                        listOf(
-                            stringResource(Res.string.a11y_permission_grant),
-                            stringResource(Res.string.a11y_permission_regrant_description),
-                        ),
-                )
-                GkAnimatedBooleanContent(
-                    targetState = platform.writeSecureSettings || platform.a11yRunning,
-                    contentTrue = {},
-                    contentFalse = {
-                        FlowRow(
-                            modifier =
-                                Modifier.fillMaxWidth()
-                                    .padding(horizontal = 20.dp)
-                                    .padding(top = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            TextButton(onClick = ::openA11ySettings) {
-                                Text(
-                                    text = stringResource(Res.string.a11y_enable),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                )
+                if (!platform.writeSecureSettings) {
+                    WorkModeSectionTitle(
+                        text = stringResource(Res.string.work_mode_basic),
+                        ready = platform.a11yEnabled,
+                    )
+                    TextListItem(
+                        modifier = Modifier.padding(horizontal = 20.dp).padding(top = 8.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        list =
+                            listOf(
+                                stringResource(Res.string.a11y_permission_grant),
+                                stringResource(Res.string.a11y_permission_regrant_description),
+                            ),
+                    )
+                    GkAnimatedBooleanContent(
+                        targetState = platform.a11yRunning,
+                        contentTrue = { Spacer(modifier = Modifier.height(20.dp)) },
+                        contentFalse = {
+                            Column {
+                                FlowRow(
+                                    modifier =
+                                        Modifier.fillMaxWidth()
+                                            .padding(horizontal = 20.dp)
+                                            .padding(top = 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    TextButton(onClick = vm::requestA11yEnable) {
+                                        Text(
+                                            text = stringResource(Res.string.a11y_enable),
+                                            style = MaterialTheme.typography.bodyLarge,
+                                        )
+                                    }
+                                    TextButton(
+                                        onClick = {
+                                            mainVm.navigator.openWebPage(AppLinks.WorkModeHelp)
+                                        },
+                                    ) {
+                                        Text(
+                                            text = stringResource(Res.string.help_view),
+                                            style = MaterialTheme.typography.bodyLarge,
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
                             }
-                            TextButton(
-                                onClick = { mainVm.navigator.openWebPage(AppLinks.WorkModeHelp) }
-                            ) {
-                                Text(
-                                    text = stringResource(Res.string.help_view),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                )
-                            }
-                        }
-                    },
-                )
-                Text(
-                    modifier = Modifier.padding(horizontal = 20.dp).padding(top = 20.dp),
+                        },
+                    )
+                }
+                WorkModeSectionTitle(
                     text = stringResource(Res.string.work_mode_enhanced),
-                    style = MaterialTheme.typography.titleSmall,
+                    ready = platform.writeSecureSettings,
                 )
                 TextListItem(
                     modifier = Modifier.padding(horizontal = 20.dp).padding(top = 8.dp),
@@ -241,18 +202,28 @@ fun WorkModePage(host: UiHost) {
                             stringResource(Res.string.secure_settings_permission_description),
                         ),
                 )
-                FlowRow(
+                Spacer(modifier = Modifier.height(20.dp))
+                WorkModeSectionTitle(
+                    text = stringResource(Res.string.work_mode_privileged_optimization),
+                    ready =
+                        platform.privilegeAvailable &&
+                            platform.privilegeCapabilities?.injectEvents == true,
+                )
+                TextListItem(
                     modifier = Modifier.padding(horizontal = 20.dp).padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    if (!platform.writeSecureSettings) {
+                    style = MaterialTheme.typography.bodyMedium,
+                    list =
+                        listOf(
+                            stringResource(Res.string.work_mode_privileged_a11y_description),
+                            stringResource(Res.string.work_mode_privileged_input_description),
+                        ),
+                )
+                if (!platform.writeSecureSettings) {
+                    FlowRow(
+                        modifier = Modifier.padding(horizontal = 20.dp).padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
                         PrivilegeAuthButton(onPrivilege)
-                    }
-                    TextButton(onClick = { vm.setShowKeepAlive(true) }) {
-                        Text(
-                            text = stringResource(Res.string.keep_alive_title),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
                     }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
@@ -262,8 +233,8 @@ fun WorkModePage(host: UiHost) {
                 modifier = Modifier.padding(horizontal = itemHorizontalPadding).fillMaxWidth(),
                 onClick = {
                     if (automationAvailable) {
-                        host.changeAutomatorMode(AutomatorMode.Automation)
-                    } else vm.setShowPrivilegeRequired(true)
+                        SettingsRepository.updateAutomatorMode(AutomatorMode.Automation.value)
+                    } else vm.setPrivilegeAction(WorkModePrivilegeAction.SwitchMode)
                 },
                 colors = surfaceCardColors,
             ) {
@@ -295,16 +266,18 @@ fun WorkModePage(host: UiHost) {
                             stringResource(Res.string.automation_a11y_description),
                             stringResource(Res.string.automation_no_display_issues),
                             stringResource(Res.string.automation_undetectable_a11y),
-                            stringResource(Res.string.automation_scope_compatibility_hint),
+                            stringResource(Res.string.automation_touch_optimization),
                         ),
                 )
                 FlowRow(
                     modifier = Modifier.padding(horizontal = 20.dp).padding(top = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    TextButton(onClick = { mainVm.navigator.navigate(A11YScopeAppListRoute) }) {
+                    TextButton(
+                        onClick = { mainVm.navigator.navigate(CompanionScopeAppListRoute) },
+                    ) {
                         Text(
-                            text = stringResource(Res.string.a11y_scoped),
+                            text = stringResource(Res.string.companion_scope),
                             style = MaterialTheme.typography.bodyLarge,
                         )
                     }
@@ -312,6 +285,31 @@ fun WorkModePage(host: UiHost) {
                 Spacer(modifier = Modifier.height(16.dp))
             }
             GkPageBottomSpace()
+        }
+    }
+}
+
+@Composable
+private fun WorkModeSectionTitle(text: String, ready: Boolean) {
+    val readyDescription = stringResource(Res.string.work_mode_ready)
+    val style = MaterialTheme.typography.titleSmall
+    Row(
+        modifier = Modifier.padding(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = text,
+            style = style,
+            modifier = Modifier.semantics { if (ready) stateDescription = readyDescription },
+        )
+        if (ready) {
+            GkIcon(
+                imageVector = GkIcons.Check,
+                modifier = Modifier.iconTextSize(style),
+                tint = MaterialTheme.colorScheme.primary,
+                contentDescription = null,
+            )
         }
     }
 }
@@ -350,7 +348,7 @@ private fun TextListItem(
                         Modifier.padding(vertical = (lineHeightDp - 4.dp) / 2)
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.tertiary)
-                            .size(4.dp)
+                            .size(4.dp),
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(text = text, style = style)

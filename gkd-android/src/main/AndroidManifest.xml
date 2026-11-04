@@ -150,7 +150,35 @@
 
             <meta-data
                 android:name="android.accessibilityservice"
-                android:resource="@xml/a11y_info" />
+                android:resource="@xml/a11y_info_standard" />
+        </service>
+
+        <service
+            android:name="com.google.android.accessibility.selecttospeak.SelectToSpeakServicePrivileged"
+            android:exported="false"
+            android:label="@string/privileged_a11y_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            tools:ignore="AccessibilityPolicy">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/a11y_info_privileged" />
+        </service>
+
+        <service
+            android:name="com.google.android.accessibility.selecttospeak.SelectToSpeakServiceCompanion"
+            android:exported="false"
+            android:label="@string/companion_a11y_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            tools:ignore="AccessibilityPolicy">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/a11y_info_companion" />
         </service>
 
         <service
@@ -160,15 +188,14 @@
         <service
             android:name="li.gkd.app.service.StatusService"
             android:exported="true"
-            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Display the running state of the application" />
         </service>
         <service
-            android:name="li.gkd.app.service.HttpService"
-            android:exported="false"
+            android:name="li.gkd.app.service.DebugService"
+            android:exported="true"
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
@@ -251,14 +278,14 @@
             android:name="li.gkd.app.service.HttpTileService"
             android:exported="true"
             android:icon="@drawable/ic_http"
-            android:label="@string/http_server"
+            android:label="@string/debug_service"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <meta-data
                 android:name="android.service.quicksettings.TOGGLEABLE_TILE"
                 android:value="true" />
             <meta-data
                 android:name="QS_TILE_URI"
-                android:value="gkd://page/1" />
+                android:value="gkd://page/1?section=http" />
 
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
@@ -275,7 +302,7 @@
                 android:value="true" />
             <meta-data
                 android:name="QS_TILE_URI"
-                android:value="gkd://page/1" />
+                android:value="gkd://page/1?section=snapshot-button" />
 
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
@@ -309,7 +336,7 @@
                 android:value="true" />
             <meta-data
                 android:name="QS_TILE_URI"
-                android:value="gkd://page/1" />
+                android:value="gkd://page/1?section=activity" />
 
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
@@ -326,13 +353,18 @@
                 android:value="true" />
             <meta-data
                 android:name="QS_TILE_URI"
-                android:value="gkd://page/1" />
+                android:value="gkd://page/1?section=event" />
 
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
 
+        <service android:name="li.gkd.app.service.MatchDiagnosticService"
+            android:exported="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User initiated matching diagnostics with notification stop control" />
+        </service>
     </application>
 
 </manifest>

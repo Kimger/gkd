@@ -1,6 +1,5 @@
 package li.gkd.app.service
 
-import li.gkd.app.util.copyText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -29,68 +28,106 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import li.gkd.app.a11y.A11yState
-import li.gkd.app.a11y.ActivityScene
-import li.gkd.app.a11y.currentTopActivity
-import li.gkd.app.a11y.topActivityFlow
-import li.gkd.app.a11y.updateTopActivity
+import li.gkd.app.matching.input.AndroidForegroundState
+import li.gkd.app.matching.input.foregroundRulesFlow
 import li.gkd.app.notif.NotificationCatalog
 import li.gkd.app.permission.PermissionStates
 import li.gkd.app.priv.privilegeContextFlow
+import li.gkd.app.priv.uiAutomationFlow
 import li.gkd.app.resources.*
+import li.gkd.app.rule.TopActivity
 import li.gkd.app.ui.component.GkIcon
 import li.gkd.app.ui.component.GkIcons
 import li.gkd.app.ui.style.iconTextSize
 import li.gkd.app.util.IntentUtils
+import li.gkd.app.util.copyText
+import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.stringResource
 
-class ActivityService : OverlayWindowService(
-    positionKey = "activity"
-) {
-    private val activityOkFlow by lazy {
-        combine(A11yService.isRunning, privilegeContextFlow) { a, b ->
-            a || b != null
-        }.stateIn(scope = lifecycleScope, started = SharingStarted.Eagerly, initialValue = false)
+class ActivityService :
+    OverlayWindowService(
+        positionKey = "activity",
+    ) {
+    private val recordedActivityFlow by lazy {
+        combine(
+                AndroidForegroundState.observedForegroundFlow,
+                foregroundRulesFlow,
+                uiAutomationFlow,
+                A11yService.isRunning,
+                privilegeContextFlow,
+            ) { observation, rules, automation, accessibility, privilege ->
+                val nodesAvailable = automation != null || accessibility
+                val identity =
+                    if (nodesAvailable) observation.confirmed
+                    else observation.task.takeIf { privilege != null }
+                val activity = identity?.let {
+                    rules.topActivity.takeIf { it.sameAs(identity.appId, identity.activityId) }
+                        ?: TopActivity(identity.appId, identity.activityId)
+                }
+                RecordedActivity(
+                    activity = activity,
+                    taskStack = !nodesAvailable && privilege != null,
+                    hasAuth = accessibility || privilege != null,
+                )
+            }
+            .stateIn(lifecycleScope, SharingStarted.Eagerly, RecordedActivity())
     }
+
+    private data class RecordedActivity(
+        val activity: TopActivity? = null,
+        val taskStack: Boolean = false,
+        val hasAuth: Boolean = false,
+    )
 
     @Composable
     override fun ComposeContent() {
         val bgColor = MaterialTheme.colorScheme.surface
         Column(
-            modifier = Modifier
-                .clip(MaterialTheme.shapes.small)
-                .background(bgColor.copy(alpha = 0.9f))
-                .width(IntrinsicSize.Max)
-                .padding(4.dp)
+            modifier =
+                Modifier.clip(MaterialTheme.shapes.small)
+                    .background(bgColor.copy(alpha = 0.9f))
+                    .width(IntrinsicSize.Max)
+                    .padding(4.dp),
         ) {
             CompositionLocalProvider(LocalContentColor provides contentColorFor(bgColor)) {
-                val topActivity by topActivityFlow.collectAsStateWithLifecycle(initialValue = currentTopActivity)
-                val hasAuth by activityOkFlow.collectAsStateWithLifecycle()
+                val recorded by recordedActivityFlow.collectAsStateWithLifecycle()
+                val topActivity = recorded.activity
                 ClosableTitle(
-                    title = if (hasAuth) Res.string.activity_record_service.getSync() else Res.string.activity_record_service_no_permission.getSync()
+                    title =
+                        stringResource(
+                            if (recorded.hasAuth) Res.string.activity_record_service
+                            else Res.string.activity_record_service_no_permission,
+                        ),
+                    label =
+                        if (recorded.taskStack)
+                            stringResource(Res.string.activity_record_task_stack)
+                        else null,
                 )
-                if (hasAuth) {
+                if (recorded.hasAuth) {
                     Box {
                         Column(
-                            modifier = Modifier.padding(start = 4.dp)
+                            modifier = Modifier.padding(start = 4.dp),
                         ) {
-                            RowText(text = topActivity.appId)
+                            RowText(text = topActivity?.appId ?: stringResource(Res.string.unknown))
                             RowText(
-                                text = topActivity.shortActivityId,
-                                color = MaterialTheme.colorScheme.secondary
+                                text = topActivity?.shortActivityId,
+                                color = MaterialTheme.colorScheme.secondary,
                             )
                         }
-                        if (topActivity.number > 0) {
+                        if ((topActivity?.number ?: 0) > 0) {
                             Text(
-                                text = topActivity.number.toString(),
+                                text = topActivity?.number.toString(),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.tertiary,
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .zIndex(1f)
-                                    .clip(MaterialTheme.shapes.extraSmall)
-                                    .padding(end = 4.dp),
+                                modifier =
+                                    Modifier.align(Alignment.TopEnd)
+                                        .zIndex(1f)
+                                        .clip(MaterialTheme.shapes.extraSmall)
+                                        .padding(end = 4.dp),
                             )
                         }
                     }
@@ -108,22 +145,15 @@ class ActivityService : OverlayWindowService(
         onCreated {
             NotificationCatalog.activity().startForeground()
             lifecycleScope.launch {
-                topActivityFlow.collect {
-                    NotificationCatalog.activity(text = it.format()).startForeground()
-                }
-            }
-            if (!A11yService.isRunning.value) {
-                A11yState.withTopActivityLock {
-                    privilegeContextFlow.value?.run {
-                        topCpn()?.let { cpn ->
-                            updateTopActivity(
-                                appId = cpn.packageName,
-                                activityId = cpn.className,
-                                scene = ActivityScene.TaskStack,
+                recordedActivityFlow
+                    .map { it.activity?.format() }
+                    .distinctUntilChanged()
+                    .collect { text ->
+                        NotificationCatalog.activity(
+                                text = text ?: getString(Res.string.unknown),
                             )
-                        }
+                            .startForeground()
                     }
-                }
             }
         }
     }
@@ -138,7 +168,6 @@ class ActivityService : OverlayWindowService(
         }
 
         fun stop() = IntentUtils.stopService(ActivityService::class)
-
     }
 }
 
@@ -150,12 +179,14 @@ private fun RowText(text: String?, color: Color = Color.Unspecified) {
             Spacer(modifier = Modifier.width(4.dp))
             GkIcon(
                 imageVector = GkIcons.ContentCopy,
-                modifier = Modifier
-                    .clip(MaterialTheme.shapes.extraSmall)
-                    .clickable(onClick = {
-                        copyText(text)
-                    })
-                    .iconTextSize(),
+                modifier =
+                    Modifier.clip(MaterialTheme.shapes.extraSmall)
+                        .clickable(
+                            onClick = {
+                                copyText(text)
+                            },
+                        )
+                        .iconTextSize(),
             )
         }
     }

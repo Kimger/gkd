@@ -19,7 +19,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import li.gkd.app.ui.component.gkTopAppBarScroll
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -39,7 +38,14 @@ import li.gkd.app.ui.component.GkSizedIconButton
 import li.gkd.app.ui.component.GkTextSwitch
 import li.gkd.app.ui.component.GkTopAppBar
 import li.gkd.app.ui.component.autoFocus
+import li.gkd.app.ui.component.gkSettingsFocus
+import li.gkd.app.ui.component.gkTopAppBarScroll
+import li.gkd.app.ui.navigation.AdvancedSection
+import li.gkd.app.ui.navigation.AppNavEntry
+import li.gkd.app.ui.platform.LocalUiHost
 import li.gkd.app.ui.platform.UiHost
+import li.gkd.app.ui.settings.setSnapshotButtonEnabled
+import li.gkd.app.ui.settings.snapshotButtonRunning
 import li.gkd.app.ui.share.launchUi
 import li.gkd.app.ui.style.titleItemPadding
 import li.gkd.app.util.ToastUtils
@@ -47,12 +53,15 @@ import org.jetbrains.compose.resources.stringResource
 
 @Composable
 fun SnapshotSettingsPage(
-    host: UiHost,
+    entry: AppNavEntry,
 ) {
+    val host = LocalUiHost.current
     val mainVm = MainViewModel.requireCurrent()
     val vm = viewModel { SnapshotSettingsViewModel() }
     val scope = rememberCoroutineScope()
     val store by SettingsRepository.settings.collectAsStateWithLifecycle()
+    val sectionRequest by entry.advancedSectionRequest.collectAsStateWithLifecycle()
+    val buttonRunning = snapshotButtonRunning()
     val screenshotServiceRunning: Boolean = screenshotServiceRunning()
 
     val nativeScreenshotAvailable: Boolean = nativeScreenshotAvailable()
@@ -79,7 +88,8 @@ fun SnapshotSettingsPage(
                         ToastUtils.show(Res.string.update_success.getSync())
                         vm.closeCaptureScreenshotDialog()
                     }
-                    ScreenshotConfigResult.InvalidApp -> ToastUtils.show(Res.string.app_id_invalid.getSync())
+                    ScreenshotConfigResult.InvalidApp ->
+                        ToastUtils.show(Res.string.app_id_invalid.getSync())
                     ScreenshotConfigResult.InvalidSelector ->
                         ToastUtils.show(Res.string.event_selector_invalid.getSync())
                 }
@@ -105,7 +115,9 @@ fun SnapshotSettingsPage(
     ) { contentPadding ->
         Column(
             modifier =
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(contentPadding)
+                Modifier.fillMaxSize()
+                    .padding(contentPadding)
+                    .verticalScroll(rememberScrollState()),
         ) {
             Text(
                 text = stringResource(Res.string.snapshot_capture_methods),
@@ -121,6 +133,17 @@ fun SnapshotSettingsPage(
                     onCheckedChange = host::setScreenshotServiceEnabled,
                 )
             }
+            GkTextSwitch(
+                modifier =
+                    Modifier.gkSettingsFocus(
+                        sectionRequest == AdvancedSection.SnapshotButton,
+                        entry::consumeAdvancedSection,
+                    ),
+                title = stringResource(Res.string.snapshot_button_label),
+                subtitle = stringResource(Res.string.snapshot_button_description),
+                checked = buttonRunning,
+                onCheckedChange = host::setSnapshotButtonEnabled,
+            )
             GkTextSwitch(
                 title = stringResource(Res.string.snapshot_volume_trigger),
                 subtitle = stringResource(Res.string.snapshot_volume_trigger_description),
@@ -140,7 +163,12 @@ fun SnapshotSettingsPage(
                         size = 32.dp,
                         iconSize = 20.dp,
                         onClickLabel = stringResource(Res.string.snapshot_screenshot_settings_open),
-                        onClick = { vm.editCaptureScreenshot(store.screenshotTargetAppId, store.screenshotEventSelector) },
+                        onClick = {
+                            vm.editCaptureScreenshot(
+                                store.screenshotTargetAppId,
+                                store.screenshotEventSelector,
+                            )
+                        },
                         imageVector = GkIcons.PageInfo,
                         contentDescription =
                             stringResource(Res.string.snapshot_screenshot_settings),

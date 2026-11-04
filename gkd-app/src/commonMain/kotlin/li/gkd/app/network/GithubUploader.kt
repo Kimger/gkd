@@ -14,23 +14,26 @@ import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMessageBuilder
 import io.ktor.http.HttpStatusCode
+import java.io.File
 import kotlinx.coroutines.delay
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.jsonObject
 import li.songe.json5.Json5
-import java.io.File
 
-private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+private val json = Json {
+    ignoreUnknownKeys = true
+    encodeDefaults = true
+}
 
 private fun HttpMessageBuilder.setCommonHeaders(cookie: String) {
     header("Cookie", cookie)
-    header("Referer", "https://github.com/gkd-kit/inspect/issues/46")
-    header("Origin", "https://github.com")
+    header("Referer", AppLinks.GithubUploadReferer)
+    header("Origin", AppLinks.Github)
     header(
         "User-Agent",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0",
     )
 }
 
@@ -54,7 +57,7 @@ private suspend fun graphqlFetch(
     cookie: String,
     data: String,
 ): HttpResponse {
-    return NetworkClients.client.post("https://github.com/_graphql") {
+    return NetworkClients.client.post(AppLinks.GithubGraphql) {
         setCommonHeaders(cookie)
         header("Accept", "application/json")
         header("Content-Type", "text/plain;charset=UTF-8")
@@ -68,20 +71,24 @@ object GithubUploader {
     suspend fun uploadFileToGithub(
         cookie: String,
         file: File,
-        listener: ((progress: Float) -> Unit)
+        listener: ((progress: Float) -> Unit),
     ): GithubPoliciesAsset {
         // prepare upload asset
         val policiesRawResp =
-            NetworkClients.client.post("https://github.com/upload/policies/assets") {
+            NetworkClients.client.post(AppLinks.GithubUploadPolicies) {
                 setCommonHeaders(cookie)
                 header("GitHub-Verified-Fetch", "true")
                 header("X-Requested-With", "XMLHttpRequest")
-                setBody(MultiPartFormDataContent(formData {
-                    append("repository_id", "661952005")
-                    append("name", "file.zip")
-                    append("size", file.length().toString())
-                    append("content_type", "application/x-zip-compressed")
-                }))
+                setBody(
+                    MultiPartFormDataContent(
+                        formData {
+                            append("repository_id", "661952005")
+                            append("name", "file.zip")
+                            append("size", file.length().toString())
+                            append("content_type", "application/x-zip-compressed")
+                        },
+                    ),
+                )
             }
         if (policiesRawResp.status == HttpStatusCode.Unauthorized) {
             throw GithubCookieException("GitHub Cookie expired")
@@ -92,33 +99,46 @@ object GithubUploader {
         val byteArray = file.readBytes()
         NetworkClients.client.post(policiesResp.upload_url) {
             // upload_url points to external storage, so GitHub credentials must not be sent.
-            setBody(MultiPartFormDataContent(formData {
-                policiesResp.form.forEach { (key, value) ->
-                    append(key, value)
-                }
-                append("file", byteArray, Headers.build {
-                    append(HttpHeaders.ContentType, "application/x-zip-compressed")
-                    append(HttpHeaders.ContentDisposition, "filename=\"file.zip\"")
-                })
-            }))
+            setBody(
+                MultiPartFormDataContent(
+                    formData {
+                        policiesResp.form.forEach { (key, value) ->
+                            append(key, value)
+                        }
+                        append(
+                            "file",
+                            byteArray,
+                            Headers.build {
+                                append(HttpHeaders.ContentType, "application/x-zip-compressed")
+                                append(HttpHeaders.ContentDisposition, "filename=\"file.zip\"")
+                            },
+                        )
+                    },
+                ),
+            )
             onUpload { bytesSentTotal, contentLength ->
                 listener(bytesSentTotal / (contentLength ?: byteArray.size).toFloat())
             }
         }
 
         // check assets
-        NetworkClients.client.put("https://github.com" + policiesResp.asset_upload_url) {
+        NetworkClients.client.put(AppLinks.githubAssetUpload(policiesResp.asset_upload_url)) {
             setCommonHeaders(cookie)
             header("Accept", "application/json")
-            setBody(MultiPartFormDataContent(formData {
-                append("authenticity_token", policiesResp.asset_upload_authenticity_token)
-            }))
+            setBody(
+                MultiPartFormDataContent(
+                    formData {
+                        append("authenticity_token", policiesResp.asset_upload_authenticity_token)
+                    },
+                ),
+            )
         }
 
         // send file url text to github comment
-        val commentResultResp = graphqlFetch(
-            cookie,
-            """
+        val commentResultResp =
+            graphqlFetch(
+                cookie,
+                """
             {
                 persistedQueryName: 'addCommentMutation',
                 query: 'edafa18ab5734f05c9893cbc92d0dfb1',
@@ -132,16 +152,19 @@ object GithubUploader {
                   },
                 },
             }
-            """.json5ToJsonString()
-        )
+            """
+                    .json5ToJsonString(),
+            )
         val commentResult = json.decodeFromString<JsonElement>(commentResultResp.bodyAsText())
 
         // "xxx"
-        val commentId = (commentResult.jsonObject["data"]
-            ?.jsonObject["addComment"]
-            ?.jsonObject["timelineEdge"]
-            ?.jsonObject["node"]
-            ?.jsonObject["id"]?.toString() ?: error("commentId not found"))
+        val commentId =
+            (commentResult.jsonObject["data"]
+                ?.jsonObject["addComment"]
+                ?.jsonObject["timelineEdge"]
+                ?.jsonObject["node"]
+                ?.jsonObject["id"]
+                ?.toString() ?: error("commentId not found"))
 
         // delay is needed
         delay(1000)
@@ -157,7 +180,8 @@ object GithubUploader {
                     input: { state: 'UNSUBSCRIBED', subscribableId: 'I_kwDOJ3SWBc6viUWN' },
                 },
             }
-            """.json5ToJsonString()
+            """
+                .json5ToJsonString(),
         )
 
         // delete the comment
@@ -175,7 +199,8 @@ object GithubUploader {
                     input: { id: $commentId },
                 },
             }
-            """.json5ToJsonString()
+            """
+                .json5ToJsonString(),
         )
         return policiesResp.asset
     }

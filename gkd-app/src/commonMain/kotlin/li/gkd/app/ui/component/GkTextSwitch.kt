@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -18,7 +19,8 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import li.gkd.app.resources.*
-import li.gkd.app.ui.style.itemPadding
+import li.gkd.app.ui.style.itemHorizontalPadding
+import li.gkd.app.ui.style.itemVerticalPadding
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
@@ -38,16 +40,25 @@ fun GkTextSwitch(
     onClickLabel: String? = stringResource(Res.string.switch_state_description, title),
 ) {
     val description =
-        title + if (checked) stringResource(Res.string.turned_on) else stringResource(Res.string.turned_off)
-    val topModifier = if (onClick != null) {
-        modifier.clickable(enabled = enabled, onClick = onClick, onClickLabel = onClickLabel)
-    } else {
-        modifier
-    }
+        title +
+            if (checked) stringResource(Res.string.turned_on)
+            else stringResource(Res.string.turned_off)
+    val topModifier =
+        if (onClick != null) {
+            modifier.clickable(enabled = enabled, onClick = onClick, onClickLabel = onClickLabel)
+        } else {
+            modifier
+        }
     Row(
-        modifier = if (paddingDisabled) topModifier else topModifier.itemPadding(),
+        modifier =
+            if (paddingDisabled) topModifier
+            else
+                topModifier.padding(
+                    horizontal = itemHorizontalPadding,
+                    vertical = if (subtitle == null) 4.dp else itemVerticalPadding,
+                ),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -66,17 +77,22 @@ fun GkTextSwitch(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = suffix, style = MaterialTheme.typography.bodyMedium.run {
-                                if (suffixUnderline) {
-                                    copy(textDecoration = TextDecoration.Underline)
-                                } else {
-                                    this
-                                }
-                            },
+                            text = suffix,
+                            style =
+                                MaterialTheme.typography.bodyMedium.run {
+                                    if (suffixUnderline) {
+                                        copy(textDecoration = TextDecoration.Underline)
+                                    } else {
+                                        this
+                                    }
+                                },
                             color = MaterialTheme.colorScheme.primary,
-                            modifier = if (onSuffixClick != null) Modifier.clickable(
-                                onClick = onSuffixClick,
-                            ) else Modifier
+                            modifier =
+                                if (onSuffixClick != null)
+                                    Modifier.clickable(
+                                        onClick = onSuffixClick,
+                                    )
+                                else Modifier,
                         )
                     }
                 } else {
@@ -93,9 +109,10 @@ fun GkTextSwitch(
             checked = checked,
             enabled = enabled,
             onCheckedChange = onCheckedChange,
-            modifier = Modifier.semantics {
-                this.stateDescription = description
-            }
+            modifier =
+                Modifier.semantics {
+                    this.stateDescription = description
+                },
         )
     }
 }

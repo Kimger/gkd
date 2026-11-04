@@ -27,13 +27,14 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import li.gkd.app.DesktopProfile
 import li.gkd.app.DesktopStorage
+import li.gkd.app.network.AppLinks
 import li.gkd.app.resources.*
 import li.gkd.app.storage.appStorage
 import li.gkd.app.ui.component.GkWebViewErrorContent
 import li.gkd.app.ui.navigation.WebViewRoute
 import li.gkd.app.ui.page.WebViewScreen
+import li.gkd.app.ui.platform.LocalUiHost
 import li.gkd.app.ui.platform.SystemActionFeedback
-import li.gkd.app.ui.platform.UiHost
 import li.gkd.app.ui.share.LocalDarkTheme
 import li.gkd.app.util.copyText
 import li.songe.compose.webview2.JavascriptInterface
@@ -47,14 +48,11 @@ import li.songe.compose.webview2.rememberWebViewState
 import org.jetbrains.compose.resources.stringResource
 
 private class DesktopWebViewBridge(initialDark: Boolean) {
-    @Volatile
-    var dark = initialDark
+    @Volatile var dark = initialDark
 
-    @JavascriptInterface
-    fun getEnvironment(): String = DesktopProfile.webViewEnvironmentJson
+    @JavascriptInterface fun getEnvironment(): String = DesktopProfile.webViewEnvironmentJson
 
-    @JavascriptInterface
-    fun isDarkTheme(): Boolean = dark
+    @JavascriptInterface fun isDarkTheme(): Boolean = dark
 }
 
 private data class WebViewFailure(val url: String, val message: String)
@@ -63,8 +61,8 @@ private data class WebViewFailure(val url: String, val message: String)
 @Suppress("DEPRECATION")
 actual fun WebViewPage(
     route: WebViewRoute,
-    host: UiHost,
 ) {
+    val host = LocalUiHost.current
     val mainVm = MainViewModel.requireCurrent()
     val running = host.browsersRunning()
     val state = host.state
@@ -80,56 +78,72 @@ actual fun WebViewPage(
         SideEffect { bridge.dark = dark }
         val entry = remember { mainVm.navigator.topEntry }
         val active by rememberUpdatedState(mainVm.navigator.topEntry === entry && running)
-        val bindings = rememberWebViewBindings(bridge, route) {
-            allowOrigin("https://gkd.li")
-            // The selected document can read the same read-only environment API.
-            runCatching { URI(route.initUrl) }.getOrNull()?.let { uri ->
-                if (uri.scheme?.lowercase() in setOf(
-                        "http",
-                        "https"
-                    ) && uri.host != null && uri.userInfo == null
-                ) {
-                    allowOrigin(
-                        URI(
-                            uri.scheme,
-                            null,
-                            uri.host,
-                            uri.port,
-                            null,
-                            null,
-                            null
-                        ).toString()
-                    )
-                }
+        val bindings =
+            rememberWebViewBindings(bridge, route) {
+                allowOrigin(AppLinks.Home)
+                // The selected document can read the same read-only environment API.
+                runCatching { URI(route.initUrl) }
+                    .getOrNull()
+                    ?.let { uri ->
+                        if (
+                            uri.scheme?.lowercase() in
+                                setOf(
+                                    "http",
+                                    "https",
+                                ) && uri.host != null && uri.userInfo == null
+                        ) {
+                            allowOrigin(
+                                URI(
+                                        uri.scheme,
+                                        null,
+                                        uri.host,
+                                        uri.port,
+                                        null,
+                                        null,
+                                        null,
+                                    )
+                                    .toString(),
+                            )
+                        }
+                    }
+                addJavascriptInterface(bridge, "gkd")
             }
-            addJavascriptInterface(bridge, "gkd")
-        }
-        val client = remember(host, scope) {
-            WebViewClient(
-                onNavigationRequest = { request ->
-                    when (runCatching { URI(request.url).scheme?.lowercase() }.getOrNull()) {
-                        "gkd" -> {
-                            scope.launch { state.handleGkdUri(request.url) }; false
-                        }
+        val client =
+            remember(host, scope) {
+                WebViewClient(
+                    onNavigationRequest = { request ->
+                        when (runCatching { URI(request.url).scheme?.lowercase() }.getOrNull()) {
+                            "gkd" -> {
+                                scope.launch { state.handleGkdUri(request.url) }
+                                false
+                            }
 
-                        "http", "https", "about", "data" -> true
-                        else -> {
-                            scope.launch { state.unsupported() }; false
+                            "http",
+                            "https",
+                            "about",
+                            "data" -> true
+                            else -> {
+                                scope.launch { state.unsupported() }
+                                false
+                            }
                         }
-                    }
-                },
-                onNewWindowRequest = { WebViewNewWindowAction.OpenInCurrentWebView },
-                onAcceleratorKey = { event ->
-                    val handled = active && event.virtualKey in setOf(
-                        KeyEvent.VK_ESCAPE, KeyEvent.VK_F12,
-                    )
-                    if (handled && event.isKeyDown && !event.isRepeat) {
-                        scope.launch { if (active) host.onBrowserKey(event.virtualKey) }
-                    }
-                    handled
-                },
-            )
-        }
+                    },
+                    onNewWindowRequest = { WebViewNewWindowAction.OpenInCurrentWebView },
+                    onAcceleratorKey = { event ->
+                        val handled =
+                            active &&
+                                event.virtualKey in
+                                    setOf(
+                                        KeyEvent.VK_ESCAPE,
+                                        KeyEvent.VK_F12,
+                                    )
+                        if (handled && event.isKeyDown && !event.isRepeat) {
+                            scope.launch { if (active) host.onBrowserKey(event.virtualKey) }
+                        }
+                        handled
+                    },
+                )
+            }
         var error by remember { mutableStateOf<WebViewFailure?>(null) }
         LaunchedEffect(browser.error) {
             browser.error?.let { failure ->
@@ -138,27 +152,36 @@ actual fun WebViewPage(
                     failure.hresult?.let { add("HRESULT: 0x${it.toUInt().toString(16)}") }
                     failure.navigationErrorCode?.let { add("WebErrorStatus: $it") }
                     failure.processFailureKind?.let { add("ProcessFailedKind: $it") }
-                }.joinToString("\n")
+                }
+                    .joinToString("\n")
                 error = WebViewFailure(failure.url ?: browser.url.ifBlank { retryUrl }, details)
             }
         }
         LaunchedEffect(dark, browser.frameCount > 0, running) {
             if (running && browser.frameCount > 0 && error == null) {
                 try {
-                    browser.evaluateJavaScript("window.dispatchEvent(new Event('gkd:themechange'));")
+                    browser.evaluateJavaScript(
+                        "window.dispatchEvent(new Event('gkd:themechange'));",
+                    )
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    // Navigation can invalidate the document; its replacement reads the current bridge.
+                    // Navigation can invalidate the document; its replacement reads the current
+                    // bridge.
                     System.err.println("WebView theme notification: ${e.message}")
                 }
             }
         }
         val url = error?.url ?: browser.url.ifBlank { retryUrl }
-        val retry: () -> Unit = { retryUrl = url; attempt++ }
+        val retry: () -> Unit = {
+            retryUrl = url
+            attempt++
+        }
         val contentLabel = stringResource(Res.string.webview_content)
         WebViewScreen(
-            title = if (error != null) stringResource(Res.string.webview_load_failed) else browser.title,
+            title =
+                if (error != null) stringResource(Res.string.webview_load_failed)
+                else browser.title,
             loading = error == null && browser.isLoading,
             onBack = mainVm.navigator::pop,
             onReload = { if (error != null) retry() else browser.reload() },
@@ -168,13 +191,17 @@ actual fun WebViewPage(
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 WebView(
                     state = browser,
-                    modifier = Modifier.fillMaxSize().alpha(if (error == null) 1f else 0f)
-                        .semantics { contentDescription = contentLabel },
-                    settings = WebViewSettings(
-                        userDataDirectory = storage.webViewCache.absolutePath,
-                        requestNativeFocus = !DesktopStorage.isolated,
-                        preferredColorScheme = if (dark) WebViewColorScheme.Dark else WebViewColorScheme.Light,
-                    ),
+                    modifier =
+                        Modifier.fillMaxSize().alpha(if (error == null) 1f else 0f).semantics {
+                            contentDescription = contentLabel
+                        },
+                    settings =
+                        WebViewSettings(
+                            userDataDirectory = storage.webViewCache.absolutePath,
+                            requestNativeFocus = !DesktopStorage.isolated,
+                            preferredColorScheme =
+                                if (dark) WebViewColorScheme.Dark else WebViewColorScheme.Light,
+                        ),
                     running = running && error == null,
                     bindings = bindings,
                     client = client,
@@ -184,17 +211,21 @@ actual fun WebViewPage(
                         onRetry = retry,
                         onOpenExternal = {
                             SystemActionFeedback.openExternal(
-                                url
+                                url,
                             )
                         },
                         url = url,
-                        errorText = error?.message.orEmpty()
+                        errorText = error?.message.orEmpty(),
                     ) {
-                        TextButton(onClick = {
-                            SystemActionFeedback.openExternal(
-                                "https://developer.microsoft.com/microsoft-edge/webview2/"
-                            )
-                        }) { Text(stringResource(Res.string.webview_runtime_install)) }
+                        TextButton(
+                            onClick = {
+                                SystemActionFeedback.openExternal(
+                                    AppLinks.WebView2Download,
+                                )
+                            },
+                        ) {
+                            Text(stringResource(Res.string.webview_runtime_install))
+                        }
                     }
                 }
             }

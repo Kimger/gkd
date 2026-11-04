@@ -25,16 +25,18 @@ data class DashboardPlatformState(
     val privilegeCapabilities: PrivilegeCapabilities? = null,
     val appRestrictions: Set<AppPermissionRestriction> = emptySet(),
 ) {
-    fun usesA11y(store: SettingsStore, scope: Set<String>) =
-        store.useA11y || (store.useAutomation && topAppId in scope)
+    val serviceEnabled: Boolean
+        get() = a11yRunning || automationRunning
 
-    fun serviceEnabled(store: SettingsStore, scope: Set<String>) =
-        if (usesA11y(store, scope)) a11yRunning else automationRunning
-
-    fun subtitle(store: SettingsStore, scope: Set<String>): StringResource =
-        if (usesA11y(store, scope)) {
+    fun subtitle(
+        store: SettingsStore,
+    ): StringResource =
+        if (automationRunning) {
+            Res.string.automation_running
+        } else if (a11yRunning) {
+            Res.string.a11y_running
+        } else if (store.useA11y) {
             when {
-                a11yRunning -> Res.string.a11y_running
                 a11yEnabled -> Res.string.a11y_fault
                 !writeSecureSettings -> Res.string.a11y_unauthorized
                 store.enableAutomator && partiallyDisabled -> Res.string.a11y_partially_disabled
@@ -42,21 +44,25 @@ data class DashboardPlatformState(
             }
         } else {
             when {
-                automationRunning -> Res.string.automation_running
                 !privilegeAvailable -> Res.string.automation_unauthorized
-                store.enableAutomator && partiallyDisabled -> Res.string.automation_partially_disabled
+                store.enableAutomator && partiallyDisabled ->
+                    Res.string.automation_partially_disabled
                 else -> Res.string.automation_stopped
             }
         }
 
-    fun authorizationRoute(enable: Boolean, store: SettingsStore, scope: Set<String>): AppRoute? =
+    fun authorizationRoute(
+        enable: Boolean,
+        store: SettingsStore,
+    ): AppRoute? =
         when {
-            enable && usesA11y(store, scope) && !writeSecureSettings -> WorkModeRoute
-            enable && !usesA11y(store, scope) &&
-                    (!privilegeAvailable || privilegeCapabilities?.restricted == true) -> PrivilegeServiceRoute
+            enable && store.useA11y && !writeSecureSettings -> WorkModeRoute
+            enable &&
+                !store.useA11y &&
+                (!privilegeAvailable || privilegeCapabilities?.restricted == true) ->
+                PrivilegeServiceRoute
             else -> null
         }
 }
 
-@androidx.compose.runtime.Composable
-expect fun dashboardPlatformState(): DashboardPlatformState
+@androidx.compose.runtime.Composable expect fun dashboardPlatformState(): DashboardPlatformState

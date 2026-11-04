@@ -6,11 +6,15 @@ import li.gkd.app.settings.SettingsRepository
 
 @Composable
 fun simulatedServiceRunning(service: SimulatedService): Boolean =
-    DesktopRuntime.requireCurrent().simulator.settings.collectAsStateWithLifecycle().value.services.running(service)
+    DesktopRuntime.requireCurrent()
+        .simulator
+        .settings
+        .collectAsStateWithLifecycle()
+        .value
+        .services
+        .running(service)
 
 fun selectedSimulatedAutomator(): SimulatedService {
-    val settings = SettingsRepository.settings.value
-    val topAppId = DesktopRuntime.requireCurrent().simulator.settings.value.device.topAppId
-    return if (settings.useA11y || topAppId in SettingsRepository.actualA11yScopeAppList)
-        SimulatedService.Accessibility else SimulatedService.Automation
+    return if (SettingsRepository.settings.value.useA11y) SimulatedService.Accessibility
+    else SimulatedService.Automation
 }

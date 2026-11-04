@@ -44,6 +44,15 @@ class RandomDelayLogTest {
 
             current.appendText("\n[2]: randomActionDelayMs=1582\n\n")
             assertEquals(listOf(1582L, 539L, 1227L), readRandomDelayLogs(directory).map { it.delayMillis })
+            FileLogWriter(directory, LogMetadata("test", "1", "test", "test")).use { writer ->
+                writer.append("RuleQuery", "worker", "queryRules", listOf(
+                    "Random action delay scheduled",
+                    "appId=com.tencent.mm, subsId=-2",
+                    "randomActionDelayMs=777",
+                ), logs[0].time + 5000, LogLevel.INFO)
+                writer.flush()
+            }
+            assertEquals(777L, readRandomDelayLogs(directory).first().delayMillis)
         } finally {
             directory.deleteRecursively()
         }

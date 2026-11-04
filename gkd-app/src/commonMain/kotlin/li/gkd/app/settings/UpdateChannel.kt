@@ -10,9 +10,17 @@ enum class UpdateChannel(
     override val labelResource: StringResource,
     val url: String,
 ) : Option<Int> {
-    // Retain persisted channel values; both select this fork's manually approved releases.
-    Stable(0, Res.string.update_channel_stable, "https://github.com/Kimger/gkd/releases/latest/download/update.json"),
-    Beta(1, Res.string.update_channel_beta, "https://github.com/Kimger/gkd/releases/latest/download/update.json");
+    Stable(
+        0,
+        Res.string.update_channel_stable,
+        "https://github.com/Kimger/gkd/releases/latest/download/update.json",
+    ),
+    Beta(
+        1,
+        Res.string.update_channel_beta,
+        "https://github.com/Kimger/gkd/releases/latest/download/update.json",
+    );
 
-    override val options get() = entries
+    override val options
+        get() = entries
 }

@@ -14,11 +14,12 @@ import li.gkd.app.privilegeUiState
 import li.gkd.app.ui.component.LocalEditorWindowInsets
 import li.gkd.app.ui.page.GkPrivilegeTopBar
 import li.gkd.app.ui.page.PrivilegeServiceInfoDialog
-import li.gkd.app.ui.platform.UiHost
+import li.gkd.app.ui.platform.LocalUiHost
 import priv.kit.ui.PrivilegeScreen
 
 @Composable
-actual fun PrivilegeServicePage(host: UiHost) {
+actual fun PrivilegeServicePage() {
+    val host = LocalUiHost.current
     val mainVm = MainViewModel.requireCurrent()
     val state = host.state
 
@@ -36,14 +37,14 @@ actual fun PrivilegeServicePage(host: UiHost) {
             confirmButton = {
                 TextButton(onClick = simulation::confirmExternalAuthorization) {
                     Text(
-                        "允许"
+                        "允许",
                     )
                 }
             },
             dismissButton = {
                 TextButton(onClick = simulation::cancelOperation) {
                     Text(
-                        "取消"
+                        "取消",
                     )
                 }
             },
@@ -51,11 +52,13 @@ actual fun PrivilegeServicePage(host: UiHost) {
     }
     PrivilegeScreen(
         state = settings.privilegeUiState(),
-        actions = simulation.actions, interactionEnabled = true, showFeedback = state.toast::show,
+        actions = simulation.actions,
+        interactionEnabled = true,
+        showFeedback = state.toast::show,
         onViewPermissionSolutions = null,
         systemPromptWindowInsets = WindowInsets(top = device.topInset.dp),
-        contentWindowInsets = LocalEditorWindowInsets.current
-            ?: ScaffoldDefaults.contentWindowInsets,
+        contentWindowInsets =
+            LocalEditorWindowInsets.current ?: ScaffoldDefaults.contentWindowInsets,
         topBar = { GkPrivilegeTopBar(mainVm.navigator::pop) { vm.setShowInfo(true) } },
     )
 }

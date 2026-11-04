@@ -3,21 +3,30 @@ package li.gkd.app.ui.navigation
 import androidx.navigation3.runtime.NavBackStack
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import li.gkd.app.util.LogUtils
+import li.gkd.app.logging.LogUtils
 import li.songe.codeorigin.CallSite
 
 class AppNavigator(private val scope: CoroutineScope) {
     val backStack: List<AppNavEntry>
         field = NavBackStack(AppNavEntry(HomeRoute))
 
-    val topEntry get() = backStack.last()
-    val topRoute get() = topEntry.route
+    val topEntry
+        get() = backStack.last()
 
-    fun pop(@CallSite loc: String = "") {
+    val topRoute
+        get() = topEntry.route
+
+    fun pop(
+        @CallSite loc: String = "",
+        entry: AppNavEntry = topEntry,
+    ) {
         scope.launch {
-            if (backStack.size > 1) {
+            if (backStack.size > 1 && topEntry === entry) {
                 val old = backStack.removeAt(backStack.lastIndex)
-                LogUtils.d("pop", "$old -> $topRoute", loc = loc)
+                LogUtils.i(
+                    "pop: ${old.route} -> $topRoute",
+                    loc = loc,
+                )
             }
         }
     }
@@ -28,12 +37,36 @@ class AppNavigator(private val scope: CoroutineScope) {
                 val old = topRoute
                 val entry = AppNavEntry(route)
                 if (replaced) backStack[backStack.lastIndex] = entry else backStack.add(entry)
-                LogUtils.d("navigate", "$old -> $topRoute", loc = loc)
+                LogUtils.i(
+                    "navigate: $old -> $topRoute",
+                    loc = loc,
+                )
             }
         }
     }
 
     fun openWebPage(url: String) = navigate(WebViewRoute(url))
+
+    fun openPage(link: GkdLink.Page) {
+        val section = link.section.takeIf { link.route == AdvancedPageRoute }
+        val route =
+            if (section == AdvancedSection.SnapshotButton) SnapshotSettingsRoute else link.route
+        if (link.route == MatchDebugRoute || section != null) {
+            scope.launch {
+                val index = backStack.indexOfLast { it.route == route }
+                val entry =
+                    if (index < 0) {
+                        AppNavEntry(route).also { backStack.add(it) }
+                    } else {
+                        backStack.subList(index + 1, backStack.size).clear()
+                        backStack[index]
+                    }
+                section?.let(entry::requestAdvancedSection)
+            }
+        } else {
+            navigate(link.route)
+        }
+    }
 
     fun popToHome() {
         scope.launch { backStack.subList(1, backStack.size).clear() }

@@ -1,23 +1,23 @@
 [versions]
-agp = "9.4.1"
+agp = "9.5.0"
 atomicfu = "0.33.0"
-cmp = "1.12.1"
-codeorigin = "0.2.1"
+cmp = "1.12.2"
+codeorigin = "0.2.3"
 coil = "3.6.3"
 compose = "1.12.1"
 coroutines = "1.11.0"
 jna = "5.19.1"
 kotlin = "2.4.21"
-ksp = "2.3.12"
-ktor = "3.6.0"
+ksp = "2.3.13"
+ktor = "3.6.1"
 lifecycle = "2.11.0"
 nav3 = "1.2.0"
-paging = "3.5.2"
-priv-kit = "0.17.8"
+paging = "3.5.3"
+priv-kit = "0.17.11"
 proguard = "7.10.0"
 remap = "0.1.7"
 room = "3.0.3"
-serialization = "1.11.0"
+serialization = "1.12.0"
 shizuku = "13.1.5"
 sqlite = "2.7.1"
 telephoto = "0.19.0"
@@ -42,7 +42,7 @@ cmp-material3 = "org.jetbrains.compose.material3:material3:1.9.0"
 cmp-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "cmp" }
 cmp-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "cmp" }
 cmp-ui-graphics = { module = "org.jetbrains.compose.ui:ui-graphics", version.ref = "cmp" }
-codeorigin = { module = "li.songe:codeorigin", version.ref = "codeorigin" }
+codeorigin = { module = "li.songe.codeorigin:codeorigin", version.ref = "codeorigin" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-gif = { module = "io.coil-kt.coil3:coil-gif", version.ref = "coil" }
 coil-network = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
@@ -56,6 +56,7 @@ compose-ui = { module = "androidx.compose.ui:ui", version.ref = "compose" }
 compose-ui-graphics = { module = "androidx.compose.ui:ui-graphics", version.ref = "compose" }
 device = "com.github.getActivity:DeviceCompat:2.6"
 exp4j = "net.objecthunter:exp4j:0.4.8"
+expression = "li.songe.expression:expression:0.1.2"
 google-accompanist-drawablepainter = "com.google.accompanist:accompanist-drawablepainter:0.37.3"
 jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
@@ -78,11 +79,12 @@ ktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }
 lsposed-hiddenapibypass = "org.lsposed.hiddenapibypass:hiddenapibypass:6.2"
 morph-compose = "li.songe.morph:morph-compose:0.4.0"
 kmp-lifecycle = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
-kmp-navigation3 = "org.jetbrains.androidx.navigation3:navigation3-ui:1.1.2"
+kmp-navigation3 = "org.jetbrains.androidx.navigation3:navigation3-ui:1.2.0"
 kmp-viewmodel = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
 kmp-viewmodel-navigation3 = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-navigation3", version.ref = "lifecycle" }
 permissions = "com.github.getActivity:XXPermissions:28.3"
 priv-kit-ui = { module = "io.github.priv-kit:priv-ui", version.ref = "priv-kit" }
+priv-kit-input = { module = "io.github.priv-kit:priv-input", version.ref = "priv-kit" }
 remap-annotation = { module = "li.songe.remap:remap-annotation", version.ref = "remap" }
 remap-processor = { module = "li.songe.remap:remap-processor", version.ref = "remap" }
 reorderable = "sh.calvin.reorderable:reorderable:3.1.0"
@@ -104,5 +106,5 @@ google-ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
-littlerobots-version = "nl.littlerobots.version-catalog-update:1.1.1"
+littlerobots-version = "nl.littlerobots.version-catalog-update:1.1.2"
 remap = { id = "li.songe.remap", version.ref = "remap" }

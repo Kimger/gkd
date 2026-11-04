@@ -3,7 +3,7 @@
 本仓库 [Kimger/gkd](https://github.com/Kimger/gkd) 是 [gkd-kit/gkd](https://github.com/gkd-kit/gkd) 的个人自用 Fork。保留上游作者信息和 [GPL-3.0-only 许可证](../LICENSE)，在少量独立提交中维护自定义功能。
 
 - `main`：用于跟随上游，不直接加入自定义功能。
-- `dev/custom-enhancements`：自用功能分支，包含随机延时、日志页面、HyperOS 4 前台识别兼容修复、电脑临时接管自动化及猫猫木鱼触发提示。
+- `dev/custom-enhancements`：自用功能分支，包含随机延时、日志页面、HyperOS 4 无障碍辅助、电脑临时接管自动化及猫猫木鱼触发提示；前台识别使用上游实现。
 - README 中的官方安装链接指向上游版本；本仓库功能需从自用分支构建。
 
 ## 猫猫木鱼触发提示
@@ -131,11 +131,9 @@ Release 包名为 `li.songe.gkd`。官方版与自签名版签名不同，首次
 
 ## 开屏前台识别兼容
 
-针对小米 OS4 上已复现的“开屏窗口仍属于应用，但任务栈短暂报告为桌面”情况，增加活动窗口核对：窗口仍属于当前应用时保留其匹配状态；若已误记为桌面，后续应用事件与活动窗口一致时允许立即纠正，不等待原有任务栈保护时间。无法确认窗口归属时保留原有判断，不按应用包名单独写特例。
+合入官方 `ddccf9cb` 后，前台识别采用上游的 `AndroidForegroundState`、窗口确认和匹配会话实现。之前针对小米 OS4 开屏窗口与任务栈不一致的自定义补丁已退出运行链路，先用官方实现验证买单吧、网易云等场景。
 
-窗口核对在前台状态锁外异步执行，最多等待 100ms；出现新前台事件后丢弃旧核对结果。确认纠正后同步服务运行模式所用的前台应用状态，并主动恢复规则查询，避免等待下一次无障碍事件。
-
-相关实现位于 `A11yState.kt` 和 `TaskForegroundPolicy.kt`；回归测试为 `TaskForegroundPolicyTest`。诊断日志可搜索 `Ignored conflicting launcher task report` 或 `Corrected launcher task report from active window`。具体 ROM 和应用的真机表现仍需验证。
+原实现保存在本地分支 `backup/custom-before-beta7`（`02307e1d`），四个补丁及旧源码另存于 `.local/merge-backups/foreground-20261104/`。若真机仍能复现，再针对官方新链路补充修复。旧补丁的活动窗口纠正、100ms 等待上限和恢复查询逻辑可作为排查参考。
 
 ## 同步上游
 

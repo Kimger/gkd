@@ -21,5 +21,4 @@ object AppStore {
         if (value == SettingsRepository.settings.value.enableAutomator) return
         SettingsRepository.updateSettings { it.copy(enableAutomator = value) }
     }
-
 }

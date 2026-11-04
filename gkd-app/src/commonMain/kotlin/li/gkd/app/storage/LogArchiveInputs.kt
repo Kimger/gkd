@@ -1,9 +1,12 @@
 package li.gkd.app.storage
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import li.gkd.app.util.LogUtils
 import java.io.File
+import kotlinx.coroutines.flow.first
+import li.gkd.app.logging.LogUtils
+import li.gkd.app.matching.diagnostics.MatchDiagnosticFiles
+import li.gkd.app.util.JsonUtils
+import li.gkd.db.Db
+import li.gkd.db.MatchDiagnosticRecord
 
 data class LogArchiveInputs(
     val metadata: Map<String, () -> String>,
@@ -12,8 +15,15 @@ data class LogArchiveInputs(
 
 expect fun logArchiveInputs(): LogArchiveInputs
 
-suspend fun createLogArchive(): File = withContext(Dispatchers.IO) {
-    LogUtils.flush()
-    val inputs = logArchiveInputs()
-    LogArchive.build(inputs.metadata, inputs.additionalDirectories)
-}
+/** An empty selection includes all saved diagnostic records. */
+suspend fun createLogArchive(diagnostics: List<MatchDiagnosticRecord> = emptyList()): File =
+    MatchDiagnosticFiles.withSavedFiles {
+        val inputs = logArchiveInputs()
+        val records = diagnostics.ifEmpty { Db.matchDiagnosticRecordDao.observeAll().first() }
+        LogArchive.build(
+            inputs.metadata +
+                ("log-writer.json" to { JsonUtils.keepingNulls.encodeToString(LogUtils.status()) }),
+            inputs.additionalDirectories,
+            records.map { MatchDiagnosticFiles.directory(it) },
+        )
+    }

@@ -15,7 +15,7 @@ import li.gkd.app.priv.uiAutomationFlow
 import li.gkd.app.service.currentAppBlocked
 import li.gkd.app.service.currentAppUseA11y
 import li.gkd.app.settings.SettingsRepository
-import li.gkd.app.util.LogUtils
+import li.gkd.app.logging.LogUtils
 import li.gkd.app.util.launchLogged
 
 object RemoteAutomationControl {
@@ -55,12 +55,12 @@ object RemoteAutomationControl {
                 startMaintenance()
                 AutomationService.pauseForRemoteControl()
                 check(!AutomationService.isOtherUiAutomationRunning()) { "automation_still_occupied" }
-                LogUtils.d("Remote automation paused")
+                LogUtils.i("Remote automation paused")
             }
             "heartbeat" -> check(lease.renew(requireNotNull(token), SystemClock.elapsedRealtime())) { "lease_expired_or_wrong_token" }
             "release" -> {
                 check(lease.release(requireNotNull(token))) { "lease_expired_or_wrong_token" }
-                LogUtils.d("Remote automation released")
+                LogUtils.i("Remote automation released")
                 tryRestore()
             }
             "status" -> Unit
@@ -83,7 +83,7 @@ object RemoteAutomationControl {
                 delay(1_000L)
                 val finished = mutex.withLock {
                     if (lease.expire(SystemClock.elapsedRealtime())) {
-                        LogUtils.d("Remote automation heartbeat expired")
+                        LogUtils.i("Remote automation heartbeat expired")
                     }
                     tryRestore()
                     (!lease.paused && !lease.shouldRestore).also {
@@ -110,12 +110,12 @@ object RemoteAutomationControl {
             throw e
         } catch (e: Exception) {
             // Keep the recovery request pending when the privileged service is temporarily unavailable.
-            LogUtils.d("Remote automation restore failed; will retry", e)
+            LogUtils.i("Remote automation restore failed; will retry", e)
             return
         }
         if (uiAutomationFlow.value != null) {
             lease.cancelRestore()
-            LogUtils.d("Remote automation restored")
+            LogUtils.i("Remote automation restored")
         }
     }
 }

@@ -32,7 +32,7 @@ jobs:
       - run: ./gradlew :gkd-android:assembleGkdRelease
         env:
           GKD_GITHUB_COOKIE: ${{ secrets.GKD_GITHUB_COOKIE }}
-          GKD_API_AUTH_TOKEN: ${{ secrets.GKD_API_AUTH_TOKEN }}
+          GKD_SERVER_TOKEN: ${{ secrets.GKD_SERVER_TOKEN }}
           GKD_STORE_FILE: ${{ github.workspace }}/gkd.jks
           GKD_STORE_PASSWORD: ${{ secrets.GKD_STORE_PASSWORD }}
           GKD_KEY_ALIAS: ${{ secrets.GKD_KEY_ALIAS }}
@@ -72,10 +72,20 @@ jobs:
         with:
           cache-encryption-key: ${{ secrets.GRADLE_CACHE_ENCRYPTION_KEY }}
 
-      - name: build Windows portable package
-        run: ./gradlew.bat :gkd-app:packageWindowsPortable
+      - name: run matching regression and build Windows portable package
+        run: ./gradlew.bat :gkd-app:matchingRegression :gkd-app:packageWindowsPortable
         env:
           GKD_RENAME_PACKAGE_FLAG: "1"
+
+      - name: upload matching regression report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: matching-regression
+          path: |
+            gkd-app/build/reports/tests/matchingRegression
+            gkd-app/build/test-results/matchingRegression
+          if-no-files-found: warn
 
       - uses: actions/upload-artifact@v7
         with:

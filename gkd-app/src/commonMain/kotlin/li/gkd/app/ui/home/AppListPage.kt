@@ -1,7 +1,5 @@
 package li.gkd.app.ui.home
 
-import li.gkd.app.ui.component.GkTriggerCount
-import li.gkd.app.record.TriggerSummary
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -18,7 +16,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import li.gkd.app.ui.component.GkPullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -31,7 +28,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.key.Key
-import li.gkd.app.ui.component.gkTopAppBarScroll
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
@@ -42,9 +38,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import li.gkd.app.app.AppInfoRepository
+import li.gkd.app.app.AppSort
 import li.gkd.app.error.displayMessage
+import li.gkd.app.error.messageResource
 import li.gkd.app.model.AppInfo
+import li.gkd.app.model.findOption
 import li.gkd.app.permission.AppPermission
+import li.gkd.app.record.TriggerStats
+import li.gkd.app.record.TriggerSummary
 import li.gkd.app.resources.*
 import li.gkd.app.settings.SettingsRepository
 import li.gkd.app.state.Loadable
@@ -59,17 +60,21 @@ import li.gkd.app.ui.component.GkFilterIconButton
 import li.gkd.app.ui.component.GkIcon
 import li.gkd.app.ui.component.GkIconButton
 import li.gkd.app.ui.component.GkIcons
+import li.gkd.app.ui.component.GkLoadingState
 import li.gkd.app.ui.component.GkMenuGroupCard
 import li.gkd.app.ui.component.GkMenuItemCheckbox
 import li.gkd.app.ui.component.GkMenuItemRadioButton
 import li.gkd.app.ui.component.GkPageBottomSpace
 import li.gkd.app.ui.component.GkPageBottomSpaceDefaults
+import li.gkd.app.ui.component.GkPullToRefreshBox
 import li.gkd.app.ui.component.GkQueryPkgAuthCard
 import li.gkd.app.ui.component.GkRuleStats
 import li.gkd.app.ui.component.GkRuleStatsData
 import li.gkd.app.ui.component.GkTopAppBar
+import li.gkd.app.ui.component.GkTriggerCount
 import li.gkd.app.ui.component.LocalOverlayBackHandler
 import li.gkd.app.ui.component.autoFocus
+import li.gkd.app.ui.component.gkTopAppBarScroll
 import li.gkd.app.ui.component.rememberListScrollState
 import li.gkd.app.ui.icon.GkBlockCloseIconButton
 import li.gkd.app.ui.icon.GkSearchCloseIconButton
@@ -77,10 +82,8 @@ import li.gkd.app.ui.image.GkAppIcon
 import li.gkd.app.ui.navigation.AppConfigRoute
 import li.gkd.app.ui.navigation.EditBlockAppListRoute
 import li.gkd.app.ui.option.AppGroupOption
-import li.gkd.app.app.AppSort
-import li.gkd.app.model.findOption
 import li.gkd.app.ui.platform.GkBackHandler
-import li.gkd.app.ui.platform.UiHost
+import li.gkd.app.ui.platform.LocalUiHost
 import li.gkd.app.ui.platform.hideIme
 import li.gkd.app.ui.share.launchUiAction
 import li.gkd.app.ui.style.getUpDownTransform
@@ -92,8 +95,8 @@ import org.jetbrains.compose.resources.stringResource
 data class AppListContentState(
     val appInfos: List<AppInfo>,
     val listState: Loadable<Unit> = Loadable.Ready(Unit),
-    val ruleStatsFailed: Boolean = false,
-    val triggerStats: li.gkd.app.record.TriggerStats? = null,
+    val ruleStatsError: Throwable? = null,
+    val triggerStats: TriggerStats? = null,
     val searchText: String = "",
     val showSearchBar: Boolean = false,
     val editWhiteListMode: Boolean = false,
@@ -110,9 +113,9 @@ data class AppListContentState(
 
 @Composable
 fun appListPage(
-    host: UiHost,
     vm: HomeViewModel,
 ): ScaffoldExt {
+    val host = LocalUiHost.current
     val mainVm = MainViewModel.requireCurrent()
     val store by SettingsRepository.settings.collectAsStateWithLifecycle()
     val appState by vm.appsState.collectAsStateWithLifecycle()
@@ -207,7 +210,7 @@ fun appListPage(
                 actions = {
                     if (state.queryPackagesAbnormal) {
                         CompositionLocalProvider(
-                            LocalContentColor provides MaterialTheme.colorScheme.error
+                            LocalContentColor provides MaterialTheme.colorScheme.error,
                         ) {
                             GkIconButton(
                                 imageVector = GkIcons.WarningAmber,
@@ -254,9 +257,12 @@ fun appListPage(
                                 AppSort.options.forEach { option ->
                                     GkMenuItemRadioButton(
                                         text = stringResource(option.labelResource),
-                                        selected =
-                                            AppSort.options.findOption(state.sort) == option,
-                                        onClick = { SettingsRepository.updateSettings { it.copy(appSort = option.value) } },
+                                        selected = AppSort.options.findOption(state.sort) == option,
+                                        onClick = {
+                                            SettingsRepository.updateSettings {
+                                                it.copy(appSort = option.value)
+                                            }
+                                        },
                                     )
                                 }
                             }
@@ -267,7 +273,11 @@ fun appListPage(
                                         enabled = newValue != 0,
                                         text = stringResource(option.labelResource),
                                         checked = option.include(state.group),
-                                        onClick = { SettingsRepository.updateSettings { it.copy(appGroupType = newValue) } },
+                                        onClick = {
+                                            SettingsRepository.updateSettings {
+                                                it.copy(appGroupType = newValue)
+                                            }
+                                        },
                                     )
                                 }
                             }
@@ -276,7 +286,9 @@ fun appListPage(
                                     text = stringResource(Res.string.whitelist_title),
                                     checked = state.showBlocked,
                                     onClick = {
-                                        SettingsRepository.updateSettings { it.copy(showBlockApp = !state.showBlocked) }
+                                        SettingsRepository.updateSettings {
+                                            it.copy(showBlockApp = !state.showBlocked)
+                                        }
                                     },
                                 )
                             }
@@ -315,20 +327,27 @@ fun appListPage(
             ) {
                 if (!state.canQueryPackages) {
                     item(key = 1, contentType = 1) {
-                        GkQueryPkgAuthCard(state.refreshing, mainVm.scope.launchUiAction {
-                            mainVm.permissions.ensurePermissions(AppPermission.QueryPackages)
-                        })
+                        GkQueryPkgAuthCard(
+                            state.refreshing,
+                            mainVm.scope.launchUiAction {
+                                mainVm.permissions.ensurePermissions(AppPermission.QueryPackages)
+                            },
+                        )
                     }
                 }
-                if (state.listState !is Loadable.Ready || state.ruleStatsFailed) {
-                    item("load-state") {
-                        Text(
-                            stringResource(
-                                if (state.listState is Loadable.Loading) Res.string.loading_progress
-                                else Res.string.data_load_failed
-                            ),
-                            modifier = Modifier.padding(16.dp),
-                        )
+                if (state.listState is Loadable.Loading) {
+                    item("load-state") { GkLoadingState() }
+                } else {
+                    val error =
+                        (state.listState as? Loadable.Failure)?.cause ?: state.ruleStatsError
+                    if (error != null) {
+                        item("load-state") {
+                            Text(
+                                text = error.messageResource(),
+                                modifier = Modifier.padding(16.dp),
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
                     }
                 }
                 items(appInfos, { it.id }) { appInfo ->
@@ -338,19 +357,21 @@ fun appListPage(
                         icon = { GkAppIcon(appInfo.id, 32.dp) },
                         name = { GkAppNameText(appId = appInfo.id, appInfo = appInfo) },
                         stats = stats,
-                        triggerSummary = if (editWhiteListMode) null else state.triggerStats?.app(appInfo.id),
+                        triggerSummary =
+                            if (editWhiteListMode) null else state.triggerStats?.app(appInfo.id),
                         editWhiteListMode = editWhiteListMode,
                         inWhiteList = appInfo.id in state.whiteListAppIds,
-                        onClick = {
-                            if (editWhiteListMode) {
-                                SettingsRepository.updateBlockMatchAppList {
-                                    if (appInfo.id in it) it - appInfo.id else it + appInfo.id
+                        onClick =
+                            vm.scope.launchUiAction {
+                                if (editWhiteListMode) {
+                                    SettingsRepository.updateBlockMatchAppList {
+                                        if (appInfo.id in it) it - appInfo.id else it + appInfo.id
+                                    }
+                                } else {
+                                    host.hideIme()
+                                    mainVm.navigator.navigate(AppConfigRoute(appInfo.id))
                                 }
-                            } else {
-                                host.hideIme()
-                                mainVm.navigator.navigate(AppConfigRoute(appInfo.id))
-                            }
-                        },
+                            },
                     )
                 }
                 item("placeholder", "placeholder") {
@@ -362,7 +383,7 @@ fun appListPage(
                         GkEmptyState(
                             text =
                                 if (state.showAllApps) stringResource(Res.string.search_no_results)
-                                else stringResource(Res.string.search_no_results_filter_hint)
+                                else stringResource(Res.string.search_no_results_filter_hint),
                         )
                         GkPageBottomSpace(height = GkPageBottomSpaceDefaults.CompactHeight)
                     } else {
@@ -389,10 +410,12 @@ fun GkAppListItem(
     val countText = count?.toString()
     val statsDescription = stats?.takeIf { it.hasRules }?.description
     val appIdText = appInfo.id.takeIf { it != appInfo.name }
-    val supportingDescription = listOfNotNull(
-        statsDescription ?: appIdText,
-        countText?.let { stringResource(Res.string.trigger_count_value, it) },
-    ).joinToString("，")
+    val supportingDescription =
+        listOfNotNull(
+                statsDescription ?: appIdText,
+                countText?.let { stringResource(Res.string.trigger_count_value, it) },
+            )
+            .joinToString("，")
     val description =
         if (editWhiteListMode || supportingDescription.isEmpty()) appInfo.name
         else
@@ -406,7 +429,7 @@ fun GkAppListItem(
     val clickLabel =
         if (editWhiteListMode)
             stringResource(
-                if (inWhiteList) Res.string.whitelist_remove else Res.string.whitelist_add
+                if (inWhiteList) Res.string.whitelist_remove else Res.string.whitelist_add,
             )
         else stringResource(Res.string.rule_summary_open)
 

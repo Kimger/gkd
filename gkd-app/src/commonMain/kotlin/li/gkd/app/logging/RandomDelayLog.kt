@@ -17,12 +17,12 @@ data class RandomDelayLog(
 fun readRandomDelayLogs(directory: File): List<RandomDelayLog> {
     if (!directory.exists()) return emptyList()
     val files = directory.listFiles() ?: throw IOException("Cannot read log directory: $directory")
-    val header = Regex("^(\\d{2}:\\d{2}:\\d{2}\\.\\d{3}) A11yRuleEngine,.*")
+    val header = Regex("^(\\d{2}:\\d{2}:\\d{2}\\.\\d{3}) (?:INFO )?(?:A11yRuleEngine|RuleQuery),.*")
     val delayPattern = Regex("(?m)^\\[2]: randomActionDelayMs=(\\d+)$")
     val appPattern = Regex("(?:^|[, ])appId=([^,\\s]+)")
     val format = SimpleDateFormat("yyyyMMdd HH:mm:ss.SSS", Locale.ROOT).apply { isLenient = false }
     val result = mutableListOf<RandomDelayLog>()
-    for (file in files.filter { it.name.matches(Regex("gkd-\\d{8}\\.log")) }) {
+    for (file in files.filter { it.name.matches(Regex("gkd-\\d{8}(?:-\\d+)?\\.log")) }) {
         val date = file.name.substring(4, 12)
         var startLine = 0
         var timeText: String? = null

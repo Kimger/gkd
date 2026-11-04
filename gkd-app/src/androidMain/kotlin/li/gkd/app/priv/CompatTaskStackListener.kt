@@ -5,60 +5,99 @@ import android.app.ITaskStackListener
 import android.content.ComponentName
 import android.os.Parcel
 import android.view.Display
-import li.gkd.app.a11y.A11yState
-import li.gkd.app.a11y.ActivityScene
-import li.gkd.app.a11y.updateTopActivity
+import java.util.concurrent.atomic.AtomicLong
+import li.gkd.app.matching.MatchingRuntime
+import li.gkd.app.matching.diagnostics.MatchStage
+import li.gkd.app.matching.diagnostics.MatchTaskObservation
+import li.gkd.app.matching.input.ActivityScene
+import li.gkd.app.matching.input.AndroidForegroundState
+import li.gkd.app.matching.input.updateTopActivity
 import li.gkd.app.util.AndroidTarget
 
 object CompatTaskStackListener : ITaskStackListener.Stub() {
 
     // https://github.com/gkd-kit/gkd/issues/941#issuecomment-2784035441
-    override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean = try {
-        super.onTransact(code, data, reply, flags)
-    } catch (_: Throwable) {
-        true
-    }
-
-    override fun onTaskStackChanged(): Unit = A11yState.withTopActivityLock {
-        val cpn = privilegeContextFlow.value?.topCpn() ?: return@withTopActivityLock
-        if (lastFront.first > 0 && lastFront.second == cpn && System.currentTimeMillis() - lastFront.first > 200) {
-            lastFront = defaultFront
-            return@withTopActivityLock
+    override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean =
+        try {
+            super.onTransact(code, data, reply, flags)
+        } catch (_: Throwable) {
+            true
         }
-        updateTopActivity(
-            appId = cpn.packageName,
-            activityId = cpn.className,
-            scene = ActivityScene.TaskStack,
-        )
-    }
 
-    private val defaultFront = 0L to ComponentName("", "")
-    private var lastFront = defaultFront
-    private fun onTaskMovedToFrontCompat(
-        cpn: ComponentName? = null
-    ): Unit = A11yState.withTopActivityLock {
-        val cpn = cpn ?: privilegeContextFlow.value?.topCpn() ?: return@withTopActivityLock
-        lastFront = System.currentTimeMillis() to cpn
-        updateTopActivity(
-            appId = cpn.packageName,
-            activityId = cpn.className,
-            scene = ActivityScene.TaskStack,
-        )
-    }
+    private val requests = AtomicLong()
 
-    override fun onTaskMovedToFront(taskId: Int): Unit = A11yState.withTopActivityLock {
-        val taskInfo = privilegeContextFlow.value?.topTask() ?: return@withTopActivityLock
-        @Suppress("DEPRECATION")
-        if (taskInfo.id != taskId) {
-            return@withTopActivityLock
+    override fun onTaskStackChanged() = observeTask("onTaskStackChanged")
+
+    private fun observeTask(
+        callback: String,
+        supplied: ComponentName? = null,
+        taskId: Int? = null,
+    ) {
+        val request = requests.incrementAndGet()
+        val diagnostics = MatchingRuntime.coordinator.diagnostics
+        fun trace(reason: String, component: ComponentName? = supplied) {
+            if (!diagnostics.enabled) return
+            diagnostics.record(
+                0,
+                MatchStage.Root,
+                reason,
+                taskObservation =
+                    MatchTaskObservation(
+                        request,
+                        callback,
+                        component?.packageName,
+                        component?.className,
+                    ),
+            )
         }
-        onTaskMovedToFrontCompat(taskInfo.topActivity)
+        trace("task_callback_received")
+        val context =
+            privilegeContextFlow.value
+                ?: run {
+                    trace("task_context_unavailable")
+                    return
+                }
+        val page = AndroidForegroundState.currentPage
+        // A blocked task Binder read must not hold up window or accessibility input.
+        val cpn =
+            supplied
+                ?: context.topTask()?.let {
+                    @Suppress("DEPRECATION")
+                    if (taskId != null && it.id != taskId) {
+                        trace("task_id_mismatch", it.topActivity)
+                        return
+                    }
+                    it.topActivity
+                }
+                ?: run {
+                    trace("task_top_unavailable")
+                    return
+                }
+        trace("task_result_received", cpn)
+        AndroidForegroundState.withTopActivityLock {
+            val discarded =
+                when {
+                    request != requests.get() -> "task_request_superseded"
+                    privilegeContextFlow.value !== context -> "task_context_changed"
+                    page !== AndroidForegroundState.currentPage -> "task_page_changed"
+                    else -> null
+                }
+            if (discarded != null) {
+                trace(discarded, cpn)
+                return@withTopActivityLock
+            }
+            trace("task_result_applied", cpn)
+            updateTopActivity(cpn.packageName, cpn.className, ActivityScene.TaskStack)
+        }
     }
+
+    override fun onTaskMovedToFront(taskId: Int) =
+        observeTask("onTaskMovedToFront(id)", taskId = taskId)
 
     override fun onTaskMovedToFront(taskInfo: ActivityManager.RunningTaskInfo) {
         if (AndroidTarget.Q && taskInfo.toHidden.displayId != Display.DEFAULT_DISPLAY) {
             return
         }
-        onTaskMovedToFrontCompat(taskInfo.topActivity)
+        observeTask("onTaskMovedToFront(info)", taskInfo.topActivity)
     }
 }

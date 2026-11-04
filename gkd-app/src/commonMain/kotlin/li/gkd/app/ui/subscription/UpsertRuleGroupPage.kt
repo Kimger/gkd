@@ -27,7 +27,7 @@ import li.gkd.app.ui.component.autoFocus
 import li.gkd.app.ui.navigation.GkEditor
 import li.gkd.app.ui.navigation.UpsertRuleGroupRoute
 import li.gkd.app.ui.page.EditorSession
-import li.gkd.app.ui.platform.UiHost
+import li.gkd.app.ui.platform.LocalUiHost
 import li.gkd.app.ui.platform.hideIme
 import li.gkd.app.ui.platform.inputInsets
 import li.gkd.app.ui.share.LocalDarkTheme
@@ -37,9 +37,9 @@ import org.jetbrains.compose.resources.stringResource
 
 @Composable
 fun UpsertRuleGroupPage(
-    host: UiHost,
     route: UpsertRuleGroupRoute,
 ) {
+    val host = LocalUiHost.current
     val mainVm = MainViewModel.requireCurrent()
     val vm = viewModel {
         UpsertRuleGroupViewModel(route)
@@ -47,6 +47,7 @@ fun UpsertRuleGroupPage(
     val draft by vm.draft.collectAsStateWithLifecycle()
     GkSubscriptionPageContent(vm.uiState, mainVm.navigator::pop) { data ->
         val text = draft ?: data.initialText
+        val missingGroup = vm.isEdit && data.initialGroup == null
         val inputInsets: Modifier = inputInsets()
 
         GkEditor(
@@ -54,7 +55,7 @@ fun UpsertRuleGroupPage(
                 title =
                     stringResource(if (vm.isEdit) Res.string.rule_edit else Res.string.rule_add),
                 hasChanges = { vm.hasTextChanged(text) },
-                saveEnabled = text.isNotBlank(),
+                saveEnabled = text.isNotBlank() && !missingGroup,
                 onSave = { vm.saveRule(text) },
             ),
             onSaved = vm::onSaved,
@@ -71,13 +72,25 @@ fun UpsertRuleGroupPage(
                 )
             Box(modifier = Modifier.scaffoldPadding(paddingValues).fillMaxSize()) {
                 CompositionLocalProvider(
-                    LocalTextStyle provides MaterialTheme.typography.bodyLarge
+                    LocalTextStyle provides MaterialTheme.typography.bodyLarge,
                 ) {
                     val modifier =
                         Modifier.autoFocus(immediateFocus = true).fillMaxSize().then(inputInsets)
                     TextField(
                         value = text,
                         onValueChange = vm::setDraft,
+                        isError = missingGroup,
+                        supportingText =
+                            if (missingGroup) {
+                                {
+                                    Text(
+                                        stringResource(
+                                            Res.string.subscription_rule_missing_detail,
+                                            route.groupKey.toString(),
+                                        ),
+                                    )
+                                }
+                            } else null,
                         modifier = modifier,
                         shape = RectangleShape,
                         colors = textColors,
@@ -86,7 +99,7 @@ fun UpsertRuleGroupPage(
                             Text(
                                 text =
                                     if (vm.isApp) stringResource(Res.string.app_rule_input_hint)
-                                    else stringResource(Res.string.global_rule_input_hint)
+                                    else stringResource(Res.string.global_rule_input_hint),
                             )
                         },
                     )

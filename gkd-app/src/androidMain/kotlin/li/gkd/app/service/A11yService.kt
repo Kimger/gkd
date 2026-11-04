@@ -2,14 +2,19 @@ package li.gkd.app.service
 
 import android.accessibilityservice.AccessibilityService
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.graphics.Bitmap
+import android.os.SystemClock
 import android.view.Display
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import com.google.android.accessibility.selecttospeak.SelectToSpeakService
+import com.google.android.accessibility.selecttospeak.SelectToSpeakServicePrivileged
+import kotlin.coroutines.resume
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
@@ -18,34 +23,43 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
-import li.gkd.app.a11y.A11yCommonImpl
-import li.gkd.app.a11y.A11yRuleEngine
-import li.gkd.app.a11y.A11yRuntime
-import li.gkd.app.automation.AuxiliaryA11yController
-import li.gkd.app.a11y.A11yState
-import li.gkd.app.a11y.currentTopActivity
-import li.gkd.app.a11y.updateTopActivity
 import li.gkd.app.appScope
+import li.gkd.app.automation.AuxiliaryA11yController
+import li.gkd.app.logging.LogUtils
+import li.gkd.app.matching.AndroidAutomationSession
+import li.gkd.app.matching.AndroidAutomationSessions
+import li.gkd.app.matching.AndroidMatchHost
+import li.gkd.app.matching.MatchingRuntime
+import li.gkd.app.matching.diagnostics.MatchServiceEvent
+import li.gkd.app.matching.input.AndroidForegroundState
+import li.gkd.app.matching.input.currentTopActivity
+import li.gkd.app.matching.input.updateTopActivity
 import li.gkd.app.platform.lifecycle.LifecycleHooks
 import li.gkd.app.platform.overlay.KeepAliveOverlayCoordinator
+import li.gkd.app.priv.hasInputInjectionPermission
 import li.gkd.app.priv.privilegeContextFlow
 import li.gkd.app.record.RuntimeRecordRepository
 import li.gkd.app.resources.*
-import li.gkd.app.store.AppStore.updateEnableAutomator
 import li.gkd.app.settings.AutomatorMode
+import li.gkd.app.settings.SettingsRepository
+import li.gkd.app.store.AppStore.updateEnableAutomator
 import li.gkd.app.util.AndroidTarget
-import li.gkd.app.util.LogUtils
 import li.gkd.app.util.ToastUtils
 import li.gkd.app.util.componentName
-import kotlin.coroutines.resume
 
 @SuppressLint("AccessibilityPolicy")
-abstract class A11yService : AccessibilityService(), A11yCommonImpl {
+abstract class A11yService : AccessibilityService(), AndroidAutomationSession {
     private val lifecycleHooks = LifecycleHooks()
     override val scope = MainScope()
-    override val mode get() = AutomatorMode.A11y
-    override val windowNodeInfo: AccessibilityNodeInfo? get() = rootInActiveWindow
-    override val windowInfos: List<AccessibilityWindowInfo> get() = windows
+    override val mode
+        get() = AutomatorMode.A11y
+
+    override val windowNodeInfo: AccessibilityNodeInfo?
+        get() = rootInActiveWindow
+
+    override val windowInfos: List<AccessibilityWindowInfo>
+        get() = windows
+
     override suspend fun screenshot(): Bitmap? = suspendCancellableCoroutine { cont ->
         if (AndroidTarget.R) {
             takeScreenshot(
@@ -63,34 +77,31 @@ abstract class A11yService : AccessibilityService(), A11yCommonImpl {
                             if (cont.isActive) {
                                 cont.resume(
                                     Bitmap.wrapHardwareBuffer(
-                                        screenshot.hardwareBuffer, screenshot.colorSpace
-                                    )
+                                        screenshot.hardwareBuffer,
+                                        screenshot.colorSpace,
+                                    ),
                                 )
                             }
                         } finally {
                             screenshot.hardwareBuffer.close()
                         }
                     }
-                }
+                },
             )
         } else {
             cont.resume(null)
         }
     }
 
-    override val ruleEngine by lazy { A11yRuleEngine(this) }
+    override val matchHost by lazy { AndroidMatchHost(this) }
+    override val subscribedEventTypes: Int?
+        get() = serviceInfo?.eventTypes
 
     override fun onInterrupt() {}
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) = ruleEngine.onA11yEvent(event)
 
-    private val startTime = System.currentTimeMillis()
-    override var justStarted: Boolean = true
-        get() {
-            if (field) {
-                field = System.currentTimeMillis() - startTime < 3_000
-            }
-            return field
-        }
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (connected && AndroidAutomationSessions.isEffective(this)) matchHost.onA11yEvent(event)
+    }
 
     private var tempShutdownFlag = false
     private var auxiliaryShutdownFlag = false
@@ -99,8 +110,28 @@ abstract class A11yService : AccessibilityService(), A11yCommonImpl {
         auxiliaryShutdownFlag = true
         shutdown(true)
     }
+    @Volatile private var replacementRequested = false
+
+    fun shutdownForReplacement() {
+        if (replacementRequested) return
+        replacementRequested = true
+        shutdown(true)
+    }
+
+    fun writeReplacement(write: () -> Boolean): Boolean {
+        val previous = replacementRequested
+        replacementRequested = true
+        var written = false
+        try {
+            written = write()
+            return written
+        } finally {
+            if (!written) replacementRequested = previous
+        }
+    }
 
     override fun shutdown(temp: Boolean) {
+        keepAliveOverlayJob?.cancel()
         if (temp) {
             tempShutdownFlag = true
         }
@@ -115,17 +146,6 @@ abstract class A11yService : AccessibilityService(), A11yCommonImpl {
     init {
         lifecycleHooks.useLogLifecycle(this)
         lifecycleHooks.onCreated {
-            isRunning.value = true
-            if (currentAppUseA11y) {
-                updateEnableAutomator(true)
-            } else if (!AuxiliaryA11yController.shouldRun) {
-                ToastUtils.show(Res.string.a11y_automation_mode_notice.getSync(), forced = true)
-                scope.launch {
-                    delay(1)
-                    shutdown(true)
-                }
-            }
-            StatusService.autoStart()
             scope.launch {
                 delay(3000)
                 if (!(destroyed || connected)) {
@@ -134,31 +154,40 @@ abstract class A11yService : AccessibilityService(), A11yCommonImpl {
             }
         }
         lifecycleHooks.onDestroyed {
+            destroyed = true
             scope.cancel()
-            if (instance === this) {
-                instance = null
+            if (!connected) return@onDestroyed
+            MatchingRuntime.coordinator.detach(this)
+            val ownsState = instance === this
+            if (ownsState) {
+                instanceFlow.value = null
+                isRunning.value = false
             }
-            isRunning.value = false
+            CompanionServiceController.update()
             releaseKeepAliveOverlayAfterHandoff()
-            if (auxiliaryShutdownFlag) {
-                ToastUtils.show(Res.string.auxiliary_a11y_stopped.getSync())
-            } else if (tempShutdownFlag) {
-                ToastUtils.show(Res.string.a11y_partially_disabled.getSync())
-            } else {
-                ToastUtils.show(Res.string.a11y_stopped.getSync())
-                updateEnableAutomator(false)
-            }
-            A11yState.withTopActivityLock {
-                privilegeContextFlow.value?.run {
-                    topCpn()?.let { cpn ->
-                        // com.android.systemui
-                        if (!currentTopActivity.sameAs(cpn.packageName, cpn.className)) {
-                            updateTopActivity(cpn.packageName, cpn.className)
-                        }
-                    }
+            if (!replacementRequested) {
+                if (auxiliaryShutdownFlag) {
+                    ToastUtils.show(Res.string.auxiliary_a11y_stopped.getSync())
+                } else if (tempShutdownFlag) {
+                    ToastUtils.show(Res.string.a11y_partially_disabled.getSync())
+                } else {
+                    ToastUtils.show(Res.string.a11y_stopped.getSync())
+                    if (ownsState) updateEnableAutomator(false)
                 }
             }
-            destroyed = true
+            val context = privilegeContextFlow.value
+            val page = AndroidForegroundState.currentPage
+            val cpn = context?.topCpn()
+            AndroidForegroundState.withTopActivityLock {
+                if (
+                    cpn != null &&
+                        context === privilegeContextFlow.value &&
+                        page === AndroidForegroundState.currentPage &&
+                        !currentTopActivity.sameAs(cpn.packageName, cpn.className)
+                ) {
+                    updateTopActivity(cpn.packageName, cpn.className)
+                }
+            }
             appScope.launch {
                 try {
                     scope.coroutineContext[Job]?.join()
@@ -166,22 +195,47 @@ abstract class A11yService : AccessibilityService(), A11yCommonImpl {
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    LogUtils.d("Runtime record flush failed", e)
+                    LogUtils.e("Runtime record flush failed", e)
                 }
             }
         }
     }
 
+    private var keepAliveOverlayJob: Job? = null
+
     private fun attachKeepAliveOverlay() {
-        if (!KeepAliveOverlayCoordinator.acquire(
-                source = KeepAliveOverlayCoordinator.Source.Accessibility,
-                owner = this,
-                context = this,
-                windowType = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            )
-        ) {
-            ToastUtils.show(Res.string.a11y_keep_alive_failed.getSync())
-        }
+        keepAliveOverlayJob?.cancel()
+        val connectedAt = SystemClock.elapsedRealtime()
+        keepAliveOverlayJob =
+            scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                val retryDelays = longArrayOf(250, 750, 1500)
+                for (attempt in 0..retryDelays.size) {
+                    if (attempt > 0) delay(retryDelays[attempt - 1])
+                    val result =
+                        KeepAliveOverlayCoordinator.acquire(
+                            source = KeepAliveOverlayCoordinator.Source.Accessibility,
+                            owner = this@A11yService,
+                            context = this@A11yService,
+                            windowType = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                        )
+                    val elapsed = SystemClock.elapsedRealtime() - connectedAt
+                    if (result.isSuccess) {
+                        LogUtils.i(
+                            "A11y keep-alive overlay attached: attempt=${attempt + 1}, elapsed=${elapsed}ms",
+                        )
+                        return@launch
+                    }
+                    val retry =
+                        result.exceptionOrNull() is WindowManager.BadTokenException &&
+                            attempt < retryDelays.size
+                    LogUtils.w(
+                        "A11y keep-alive overlay failed: attempt=${attempt + 1}, elapsed=${elapsed}ms, retry=$retry",
+                        result.exceptionOrNull(),
+                    )
+                    if (!retry) break
+                }
+                ToastUtils.show(Res.string.a11y_keep_alive_failed.getSync())
+            }
     }
 
     private fun releaseKeepAliveOverlayAfterHandoff() {
@@ -189,8 +243,10 @@ abstract class A11yService : AccessibilityService(), A11yCommonImpl {
             KeepAliveOverlayCoordinator.releaseAfterHandoff(
                 source = KeepAliveOverlayCoordinator.Source.Accessibility,
                 owner = this@A11yService,
-                replacement = KeepAliveOverlayCoordinator.Source.Status
-                    .takeIf { StatusService.isRunning.value },
+                replacement =
+                    KeepAliveOverlayCoordinator.Source.Status.takeIf {
+                        StatusService.isRunning.value
+                    },
             )
         }
     }
@@ -202,33 +258,59 @@ abstract class A11yService : AccessibilityService(), A11yCommonImpl {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        // The OS may finish binding after automation has already stopped or the option changed.
-        if (!currentAppUseA11y && !AuxiliaryA11yController.shouldRun) {
-            shutdown(true)
+        LogUtils.i("onA11yConnected -> ${this::class.simpleName}")
+        val useA11y = SettingsRepository.settings.value.useA11y
+        val auxiliary = AuxiliaryA11yController.shouldRun
+        val expectedComponent = if (auxiliary) standardComponent else preferredComponent
+        if ((!useA11y && !auxiliary) || this::class.componentName != expectedComponent) {
+            if (!useA11y) {
+                ToastUtils.show(Res.string.a11y_automation_mode_notice.getSync(), forced = true)
+            }
+            shutdownForReplacement()
+            scope.cancel()
             return
         }
-        LogUtils.d("onA11yConnected -> ${this::class.simpleName}")
-        instance = this
-        attachKeepAliveOverlay()
+        instance?.takeIf { it !== this }?.shutdownForReplacement()
         connected = true
+        instanceFlow.value = this
+        isRunning.value = true
+        if (useA11y) updateEnableAutomator(true)
+        StatusService.autoStart()
+        attachKeepAliveOverlay()
         ToastUtils.show(Res.string.a11y_started.getSync())
-        if (currentAppUseA11y) {
-            A11yRuntime.onA11yConnected(this)
-        }
+        AndroidAutomationSessions.onA11yConnected(this)
+        CompanionServiceController.update()
     }
 
     override fun onDestroy() {
         lifecycleHooks.dispatchDestroyed()
         super.onDestroy()
+        if (connected) {
+            AndroidAutomationSessions.recordServiceEvent(this, MatchServiceEvent.Disconnected)
+        }
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        keepAliveOverlayJob?.cancel()
+        return super.onUnbind(intent)
     }
 
     companion object {
-        val a11yCn by lazy { SelectToSpeakService::class.componentName }
+        val standardComponent by lazy { SelectToSpeakService::class.componentName }
+        val privilegedComponent by lazy { SelectToSpeakServicePrivileged::class.componentName }
+        val preferredComponent
+            get() =
+                if (privilegeContextFlow.value != null && hasInputInjectionPermission())
+                    privilegedComponent
+                else standardComponent
+
         val isRunning: StateFlow<Boolean>
             field = MutableStateFlow(false)
 
-        @Volatile
-        var instance: A11yService? = null
-            private set
+        val instanceFlow: StateFlow<A11yService?>
+            field = MutableStateFlow(null)
+
+        val instance: A11yService?
+            get() = instanceFlow.value
     }
 }

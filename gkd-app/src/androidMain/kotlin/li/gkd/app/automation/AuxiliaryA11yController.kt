@@ -15,6 +15,7 @@ import li.gkd.app.service.A11yService
 import li.gkd.app.service.currentAppBlocked
 import li.gkd.app.service.currentAppUseA11y
 import li.gkd.app.service.currentAppUseAuxiliaryA11y
+import li.gkd.app.service.withServiceControl
 import li.gkd.app.settings.SettingsRepository
 import li.gkd.app.settings.AppScopePolicy
 import li.gkd.app.ui.share.launchUi
@@ -52,18 +53,18 @@ object AuxiliaryA11yController {
                 ToastUtils.show(getString(Res.string.auxiliary_a11y_permission_required))
                 return@launchUi
             }
-            withContext(Dispatchers.IO) {
-                if (!shouldRun) return@withContext
+            withServiceControl {
+                if (!shouldRun) return@withServiceControl
                 val services = app.getSecureA11yServices()
                 // An enabled but unbound service needs the same re-enable used by the existing tile.
-                if (services.remove(A11yService.a11yCn)) {
+                if (services.remove(A11yService.standardComponent)) {
                     app.putSecureA11yServices(services)
                     delay(1000)
                 }
-                if (!shouldRun) return@withContext
+                if (!shouldRun) return@withServiceControl
                 // Re-read after waiting so other services enabled by the user are preserved.
                 val current = app.getSecureA11yServices()
-                current.add(A11yService.a11yCn)
+                current.add(A11yService.standardComponent)
                 app.putSecureInt(Settings.Secure.ACCESSIBILITY_ENABLED, 1)
                 app.putSecureA11yServices(current)
             }

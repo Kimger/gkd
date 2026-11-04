@@ -14,14 +14,17 @@ import li.gkd.app.ui.home.NotificationTextPage
 import li.gkd.app.ui.log.A11yEventLogPage
 import li.gkd.app.ui.log.RandomDelayLogPage
 import li.gkd.app.ui.log.ActivityLogPage
-import li.gkd.app.ui.platform.UiHost
-import li.gkd.app.ui.settings.A11yScopeAppListPage
+import li.gkd.app.ui.log.MatchDebugPage
 import li.gkd.app.ui.settings.AboutPage
 import li.gkd.app.ui.settings.AdvancedPage
 import li.gkd.app.ui.settings.AppWhitelistPage
-import li.gkd.app.ui.settings.BlockA11yAppListPage
+import li.gkd.app.ui.settings.DebugSettingsPage
 import li.gkd.app.ui.settings.ExternalCallsPage
+import li.gkd.app.ui.settings.KeepAlivePage
 import li.gkd.app.ui.settings.QuickSettingsTilesPage
+import li.gkd.app.ui.settings.ServiceScopeAppListPage
+import li.gkd.app.ui.settings.ServiceScopeKind
+import li.gkd.app.ui.settings.TouchOptimizationPage
 import li.gkd.app.ui.settings.WorkModePage
 import li.gkd.app.ui.snapshot.SnapshotPage
 import li.gkd.app.ui.snapshot.SnapshotPreviewPage
@@ -40,9 +43,7 @@ import li.gkd.app.ui.subscription.UpsertRuleGroupPage
 
 /** Shared production route registry for both hosts. */
 @Composable
-fun GkAppNavigation(
-    host: UiHost,
-) {
+fun GkAppNavigation() {
     val mainVm = MainViewModel.requireCurrent()
     GkNavigation(mainVm.navigator.backStack, mainVm.navigator::pop) { entry ->
         val route = entry.route
@@ -52,39 +53,43 @@ fun GkAppNavigation(
             metadata = route.transition.toMetadata(),
         ) {
             when (route) {
-                is SubsAppListRoute -> SubsAppListPage(host, route)
+                is SubsAppListRoute -> SubsAppListPage(route)
                 is SubsAppGroupListRoute -> SubsAppGroupListPage(route)
                 is SubsGlobalGroupListRoute -> SubsGlobalGroupListPage(route)
-                is SubsGlobalGroupExcludeRoute -> SubsGlobalGroupExcludePage(host, route)
+                is SubsGlobalGroupExcludeRoute -> SubsGlobalGroupExcludePage(route)
                 is SubsCategoryRoute -> SubsCategoryPage(route)
                 is SubsCategoryGroupRoute -> SubsCategoryGroupPage(route)
-                is RuleExcludeEditorRoute -> RuleExcludeEditorPage(host, route)
+                is RuleExcludeEditorRoute -> RuleExcludeEditorPage(route)
                 is AppConfigRoute -> AppConfigPage(route)
                 is ActionLogRoute -> ActionLogPage(route)
-                is UpsertRuleGroupRoute -> UpsertRuleGroupPage(host, route)
-                is CategoryEditorRoute -> CategoryEditorPage(host, route)
-                is SnapshotPreviewRoute -> SnapshotPreviewPage(host, route)
-                is WebViewRoute -> WebViewPage(route, host)
-                is ImagePreviewRoute -> ImagePreviewPage(host, route)
+                is UpsertRuleGroupRoute -> UpsertRuleGroupPage(route)
+                is CategoryEditorRoute -> CategoryEditorPage(route)
+                is SnapshotPreviewRoute -> SnapshotPreviewPage(route)
+                is WebViewRoute -> WebViewPage(route)
+                is ImagePreviewRoute -> ImagePreviewPage(route)
 
                 ActivityLogRoute -> ActivityLogPage()
                 A11yEventLogRoute -> A11yEventLogPage()
                 RandomDelayLogRoute -> RandomDelayLogPage()
-                A11YScopeAppListRoute -> A11yScopeAppListPage(host)
-                BlockA11yAppListRoute -> BlockA11yAppListPage(host)
-                EditBlockAppListRoute -> AppWhitelistPage(host)
-                SnapshotPageRoute -> SnapshotPage(host)
-                HomeRoute -> HomePage(host)
-                ActionToastRoute -> ActionToastPage(host)
-                NotificationTextRoute -> NotificationTextPage(host)
-                WorkModeRoute -> WorkModePage(host)
-                AboutRoute -> AboutPage(host)
-                BlockA11ySetupRoute -> BlockA11ySetupPage(host)
-                AdvancedPageRoute -> AdvancedPage(host)
+                BlockA11yAppListRoute -> ServiceScopeAppListPage(ServiceScopeKind.Disabled)
+                CompanionScopeAppListRoute -> ServiceScopeAppListPage(ServiceScopeKind.Companion)
+                EditBlockAppListRoute -> AppWhitelistPage()
+                SnapshotPageRoute -> SnapshotPage()
+                HomeRoute -> HomePage()
+                ActionToastRoute -> ActionToastPage()
+                NotificationTextRoute -> NotificationTextPage()
+                WorkModeRoute -> WorkModePage()
+                AboutRoute -> AboutPage()
+                BlockA11ySetupRoute -> BlockA11ySetupPage()
+                AdvancedPageRoute -> AdvancedPage(entry)
+                DebugSettingsRoute -> DebugSettingsPage()
+                KeepAliveRoute -> KeepAlivePage()
+                TouchOptimizationRoute -> TouchOptimizationPage()
+                MatchDebugRoute -> MatchDebugPage()
                 ExternalCallsRoute -> ExternalCallsPage()
                 QuickSettingsTilesRoute -> QuickSettingsTilesPage()
-                PrivilegeServiceRoute -> PrivilegeServicePage(host)
-                SnapshotSettingsRoute -> SnapshotSettingsPage(host)
+                PrivilegeServiceRoute -> PrivilegeServicePage()
+                SnapshotSettingsRoute -> SnapshotSettingsPage(entry)
                 CrashReportRoute -> CrashReportPage()
             }
         }
