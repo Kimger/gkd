@@ -25,6 +25,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import li.gkd.app.appScope
 import li.gkd.app.automation.AuxiliaryA11yController
+import li.gkd.app.automation.A11yStopReason
 import li.gkd.app.logging.LogUtils
 import li.gkd.app.matching.AndroidAutomationSession
 import li.gkd.app.matching.AndroidAutomationSessions
@@ -165,16 +166,18 @@ abstract class A11yService : AccessibilityService(), AndroidAutomationSession {
             }
             CompanionServiceController.update()
             releaseKeepAliveOverlayAfterHandoff()
-            if (!replacementRequested) {
-                if (auxiliaryShutdownFlag) {
-                    ToastUtils.show(Res.string.auxiliary_a11y_stopped.getSync())
-                } else if (tempShutdownFlag) {
-                    ToastUtils.show(Res.string.a11y_partially_disabled.getSync())
-                } else {
-                    ToastUtils.show(Res.string.a11y_stopped.getSync())
-                    if (ownsState) updateEnableAutomator(false)
-                }
+            val stopReason = A11yStopReason.resolve(
+                replacement = replacementRequested,
+                auxiliary = auxiliaryShutdownFlag || currentAppUseAuxiliaryA11y,
+                temporary = tempShutdownFlag,
+            )
+            when (stopReason) {
+                A11yStopReason.Replacement -> Unit
+                A11yStopReason.Auxiliary -> ToastUtils.show(Res.string.auxiliary_a11y_stopped.getSync())
+                A11yStopReason.Temporary -> ToastUtils.show(Res.string.a11y_partially_disabled.getSync())
+                A11yStopReason.Primary -> ToastUtils.show(Res.string.a11y_stopped.getSync())
             }
+            if (stopReason.disablesAutomator(ownsState)) updateEnableAutomator(false)
             val context = privilegeContextFlow.value
             val page = AndroidForegroundState.currentPage
             val cpn = context?.topCpn()
