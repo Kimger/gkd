@@ -272,8 +272,18 @@ object SnapshotCaptureHost {
         val outcome =
             SnapshotCaptureRepository.capture(settings.autoSaveSnapshotToDownloads) {
                 val rootNode =
-                    AndroidAutomationSessions.getRoot(service)
-                        ?: throw InspectionException(InspectionFailure.SnapshotNodesUnavailable)
+                    service.matchHost.readActiveWindow { error ->
+                        val result =
+                            if (error == null) "null"
+                            else "${error.javaClass.name}: ${error.message}"
+                        val foreground = AndroidForegroundState.observedForegroundFlow.value
+                        LogUtils.w(
+                            "SCREEN_NODES_UNAVAILABLE (mode=${service.mode}, " +
+                                "connectionId=${service.matchHost.connectionId}, " +
+                                "task=${foreground.task}, confirmed=${foreground.confirmed}): " +
+                                "rootInActiveWindow=$result",
+                        )
+                    } ?: throw InspectionException(InspectionFailure.SnapshotNodesUnavailable)
                 val appId = rootNode.packageName.toString()
                 val foreground = AndroidForegroundState.observedForegroundFlow.value
                 val activityId =

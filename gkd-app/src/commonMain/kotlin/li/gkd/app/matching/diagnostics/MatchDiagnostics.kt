@@ -1,6 +1,8 @@
 package li.gkd.app.matching.diagnostics
 
 import java.util.UUID
+import kotlin.coroutines.EmptyCoroutineContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.Serializable
@@ -37,6 +39,34 @@ data class MatchNodePressure(
     val capacity: Int,
     val observedReads: Int,
     val oldestObservedReadNanos: Long?,
+    val executor: MatchNodeExecutorSnapshot? = null,
+    val failureMessage: String? = null,
+    val executorSnapshotSkipped: Boolean = false,
+)
+
+/** Sequential observations after failure, not an atomic snapshot of the rejection instant. */
+@Serializable
+data class MatchNodeExecutorSnapshot(
+    val poolSize: Int,
+    val activeCount: Int,
+    val largestPoolSize: Int,
+    val taskCount: Long,
+    val completedTaskCount: Long,
+    val queueSize: Int,
+    val shutdown: Boolean,
+    val terminating: Boolean,
+    val terminated: Boolean,
+    val threads: List<MatchNodeThreadSnapshot>,
+)
+
+@Serializable
+data class MatchNodeThreadSnapshot(
+    val id: Long,
+    val name: String,
+    val state: String,
+    val alive: Boolean,
+    val interrupted: Boolean,
+    val stackTrace: List<String>,
 )
 
 @Serializable
@@ -142,8 +172,9 @@ class MatchDiagnostics(
     private var sequence = 0L
     private var operationSequence = 0L
     private var operationStatistics = MatchOperationStatisticsRecorder()
+    private val nodeSnapshotTimes = mutableMapOf<MatchNodeReadFailure, Long>()
     private var origin = 0L
-    private var capacity = 2000
+    private var capacity = 20_000
     private var snapshotSequence = 0L
     private var lastRules: ForegroundRuleSnapshot? = null
     private var definitionSequence = 0L
@@ -162,8 +193,35 @@ class MatchDiagnostics(
         val operationStatistics: MatchOperationStatisticsRecorder,
     )
 
+    private var accessibilitySettings = emptyList<AccessibilitySettingRecord>()
+    private var droppedAccessibilitySettings = 0L
+
+    fun finishAccessibilitySettings(
+        id: String,
+        records: List<AccessibilitySettingRecord>,
+        dropped: Long,
+    ) =
+        synchronized(lock) {
+            val previous = stoppedSessions[id]
+            if (previous != null) {
+                previous.capture =
+                    previous.capture.copy(
+                        accessibilitySettings = records,
+                        droppedAccessibilitySettings = dropped,
+                    )
+            } else {
+                requireSession(id)
+                accessibilitySettings = records
+                droppedAccessibilitySettings = dropped
+            }
+            if (!session(id).active) onStoppedCapture(export(id))
+        }
+
     private val stoppedSessions = linkedMapOf<String, StoppedSession>()
     private var droppedQueryRecordings = 0L
+    private var droppedQuerySummaries = 0L
+    private var querySequence = 0L
+    private var followingFaultQueries = 0
     private var initialRules: List<MatchRuleIndex>? = null
     private val runs = linkedMapOf<String, MatchDebugRunState>()
     private var runtime: MatchDebugSnapshot? = null
@@ -180,7 +238,7 @@ class MatchDiagnostics(
         policy: MatchTimingPolicy,
         detailed: Boolean = false,
         ruleFilter: String? = null,
-        capacity: Int = 2000,
+        capacity: Int = 20_000,
         recordQueries: Boolean = false,
         recordSystem: Boolean = false,
         initialRules: List<MatchRuleIndex>? = null,
@@ -210,9 +268,12 @@ class MatchDiagnostics(
             }
             systemRecorder = null
             operationStatistics = MatchOperationStatisticsRecorder()
+            nodeSnapshotTimes.clear()
             events.clear()
             keyEvents.clear()
             boundaryEvents.clear()
+            accessibilitySettings = emptyList()
+            droppedAccessibilitySettings = 0
             droppedBoundaryEvents = 0
             droppedKeyEvents = 0
             ruleSnapshots.clear()
@@ -224,6 +285,9 @@ class MatchDiagnostics(
             entries.clear()
             queryRecordings.clear()
             droppedQueryRecordings = 0
+            droppedQuerySummaries = 0
+            querySequence = 0
+            followingFaultQueries = 0
             this.initialRules = initialRules
             runs.clear()
             runtime = null
@@ -251,31 +315,59 @@ class MatchDiagnostics(
 
     fun shouldRecordQuery(id: String): Boolean =
         synchronized(lock) {
-            if (!enabled || state.value?.id != id || state.value?.recordQueries != true)
-                return@synchronized false
-            if (state.value?.recordSystem == true || queryRecordings.size < 8) true
-            else {
-                droppedQueryRecordings++
-                false
-            }
+            enabled && state.value?.id == id && state.value?.recordQueries == true
         }
 
     fun registerQuery(id: String, evidence: MatchQueryEvidence) =
         synchronized(lock) {
             if (state.value?.id != id || state.value?.recordQueries != true) return@synchronized
-            if (state.value?.recordSystem == true) {
-                if (queryRecordings.size == 32) {
-                    queryRecordings.removeAt(0)
-                    droppedQueryRecordings++
-                }
-                queryRecordings.add(evidence)
-            } else if (queryRecordings.size < 8) queryRecordings.add(evidence)
-            else droppedQueryRecordings++
+            evidence.identify(++querySequence)
+            if (followingFaultQueries > 0) {
+                evidence.protect("after_fault")
+                followingFaultQueries--
+            }
+            if (queryRecordings.size == 2_000) {
+                if (queryRecordings.removeAt(0).detailsRetained) droppedQueryRecordings++
+                droppedQuerySummaries++
+            }
+            queryRecordings.add(evidence)
+            trimQueryDetails()
         }
 
-    fun finishQuery(id: String) =
+    private fun protectQueryContext(reason: String, query: MatchQueryEvidence? = null) {
+        val index = if (query == null) queryRecordings.lastIndex else queryRecordings.indexOf(query)
+        if (index >= 0) {
+            queryRecordings
+                .subList(maxOf(0, index - 2), minOf(queryRecordings.size, index + 3))
+                .filter { it.detailsRetained }
+                .forEach { it.protect(reason) }
+        }
+        followingFaultQueries = maxOf(0, 2 - (queryRecordings.lastIndex - index))
+    }
+
+    private fun trimQueryDetails() {
+        val protected = queryRecordings.filter { it.retainedFor != null }
+        protected.dropLast(16).forEach { it.protect(null) }
+        val recent =
+            queryRecordings.takeLast(if (state.value?.recordSystem == true) 32 else 8).toSet()
+        queryRecordings.forEach {
+            if (it !in recent && it.retainedFor == null && it.releaseDetails())
+                droppedQueryRecordings++
+        }
+    }
+
+    fun finishQuery(id: String, evidence: MatchQueryEvidence) =
         synchronized(lock) {
             if (state.value?.id == id) {
+                evidence.snapshot(includeDetails = false).let {
+                    if (it.outcome == "failed" || (it.durationNanos ?: 0) >= 500_000_000L) {
+                        protectQueryContext(
+                            if (it.outcome == "failed") "query_failed" else "slow_query",
+                            evidence,
+                        )
+                    }
+                }
+                trimQueryDetails()
                 if (!enabled) onStoppedCapture(export(id))
             } else if (id in stoppedSessions) {
                 onStoppedCapture(export(id))
@@ -392,8 +484,25 @@ class MatchDiagnostics(
         activeReads: Int,
         capacity: Int,
         sessionId: String? = null,
+        failureMessage: String? = null,
+        executorSnapshot: (() -> MatchNodeExecutorSnapshot)? = null,
     ) {
         if (!enabled) return
+        val sample =
+            synchronized(lock) {
+                if (!enabled || (sessionId != null && state.value?.id != sessionId)) return
+                if (executorSnapshot == null) false
+                else {
+                    val now = nanoTime()
+                    val previous = nodeSnapshotTimes[reason]
+                    if (previous == null || now - previous >= 1_000_000_000L) {
+                        nodeSnapshotTimes[reason] = now
+                        true
+                    } else false
+                }
+            }
+        // Read stacks outside the diagnostic lock so workers can finish recording operations.
+        val executor = if (sample) executorSnapshot?.invoke() else null
         synchronized(lock) {
             if (!enabled) return
             if (sessionId != null && state.value?.id != sessionId) return
@@ -412,6 +521,9 @@ class MatchDiagnostics(
                         capacity,
                         reads.size,
                         oldest?.let { nanoTime() - origin - it },
+                        executor,
+                        failureMessage,
+                        executorSnapshotSkipped = executorSnapshot != null && !sample,
                     ),
             )
         }
@@ -426,6 +538,7 @@ class MatchDiagnostics(
         arguments: List<MatchRecordedValue> = emptyList(),
         sessionId: String? = null,
         recording: MatchQueryEvidence? = null,
+        threadName: String? = null,
     ): MatchOperation? {
         if (!enabled) return null
         return synchronized(lock) {
@@ -444,7 +557,7 @@ class MatchDiagnostics(
                     runId,
                     rule,
                     page?.let(System::identityHashCode),
-                    Thread.currentThread().name,
+                    threadName ?: Thread.currentThread().name,
                     nanoTime() - origin,
                     parentOperationId = parentOperationId,
                     arguments = arguments,
@@ -464,44 +577,92 @@ class MatchDiagnostics(
         }
     }
 
-    fun endOperation(operation: MatchOperation?, outcome: String) {
+    fun operationTimeNanos(): Long = nanoTime()
+
+    /**
+     * Completion publication must not retain a node-reader slot or delay its caller. Optional times
+     * are absolute monotonic timestamps captured by the worker, before diagnostic dispatch.
+     */
+    fun endOperationAsync(
+        operation: MatchOperation?,
+        outcome: String,
+        startedNanos: Long? = null,
+        finishedNanos: Long? = null,
+    ) {
+        if (operation == null) return
+        val finished = finishedNanos ?: nanoTime()
+        Dispatchers.Default.dispatch(EmptyCoroutineContext) {
+            endOperation(operation, outcome, startedNanos, finished)
+        }
+    }
+
+    fun endOperation(
+        operation: MatchOperation?,
+        outcome: String,
+        startedNanos: Long? = null,
+        finishedNanos: Long? = null,
+    ) {
         if (operation == null) return
         synchronized(lock) {
             val current = state.value ?: return
-            if (current.id != operation.sessionId) {
-                val previous = stoppedSessions[operation.sessionId] ?: return
+            val previous =
+                if (current.id != operation.sessionId) {
+                    stoppedSessions[operation.sessionId] ?: return
+                } else null
+            val session = previous?.capture?.session ?: current
+            if (session.openOperations.none { it.id == operation.id }) return
+            val operationOrigin = previous?.origin ?: origin
+            val elapsed = (finishedNanos ?: nanoTime()) - operationOrigin
+            val started = startedNanos?.minus(operationOrigin) ?: operation.startedNanos
+            val finished =
+                operation.copy(
+                    startedNanos = started,
+                    durationNanos = elapsed - started,
+                    outcome = outcome,
+                )
+            (previous?.operationStatistics ?: operationStatistics).record(finished)
+            recordFinishedOperation(finished)
+            val updated =
+                session.copy(
+                    openOperations = session.openOperations.filterNot { it.id == operation.id },
+                )
+            if (previous == null) state.value = updated
+            if (previous == null && enabled) {
+                if (
+                    operation.recording != null &&
+                        (outcome == "returned" || outcome == "null" || outcome == "false")
+                )
+                    return
+                record(
+                    operation.runId,
+                    MatchStage.Idle,
+                    "operation_finished",
+                    operation.rule,
+                    entrySource = "operation",
+                    operation = finished,
+                )
+                return
+            }
+            val event =
+                MatchTrace(
+                    if (previous != null) ++previous.sequence else ++sequence,
+                    wallTime(),
+                    elapsed,
+                    operation.runId,
+                    MatchStage.Idle,
+                    "operation_finished_after_stop",
+                    operation.rule,
+                    entrySource = "operation",
+                    operation = finished,
+                )
+            if (previous != null) {
                 val capture = previous.capture
-                if (capture.session.openOperations.none { it.id == operation.id }) return
-                val elapsed = nanoTime() - previous.origin
-                val finished =
-                    operation.copy(
-                        durationNanos = elapsed - operation.startedNanos,
-                        outcome = outcome,
-                    )
-                val event =
-                    MatchTrace(
-                        ++previous.sequence,
-                        wallTime(),
-                        elapsed,
-                        operation.runId,
-                        MatchStage.Idle,
-                        "operation_finished_after_stop",
-                        operation.rule,
-                        entrySource = "operation",
-                        operation = finished,
-                    )
-                previous.operationStatistics.record(finished)
-                recordFinishedOperation(finished)
                 val dropped = capture.events.size == previous.capacity
                 previous.capture =
                     capture.copy(
                         session =
-                            capture.session.copy(
-                                openOperations =
-                                    capture.session.openOperations.filterNot {
-                                        it.id == operation.id
-                                    },
-                                dropped = capture.session.dropped + if (dropped) 1 else 0,
+                            updated.copy(
+                                dropped = updated.dropped + if (dropped) 1 else 0,
                             ),
                         events = (if (dropped) capture.events.drop(1) else capture.events) + event,
                         keyEvents =
@@ -516,58 +677,29 @@ class MatchDiagnostics(
                                 )
                                     1
                                 else 0,
+                        boundaryEvents =
+                            if (event.isBoundaryTrace())
+                                (capture.boundaryEvents + event).takeLast(previous.capacity)
+                            else capture.boundaryEvents,
+                        droppedBoundaryEvents =
+                            capture.droppedBoundaryEvents +
+                                if (
+                                    event.isBoundaryTrace() &&
+                                        capture.boundaryEvents.size == previous.capacity
+                                )
+                                    1
+                                else 0,
                     )
-                onStoppedCapture(export(operation.sessionId))
-                pruneStoppedSessions(operation.sessionId)
-                return
-            }
-            if (current.openOperations.none { it.id == operation.id }) return
-            state.value =
-                current.copy(
-                    openOperations = current.openOperations.filterNot { it.id == operation.id },
-                )
-            val finished =
-                operation.copy(
-                    durationNanos = nanoTime() - origin - operation.startedNanos,
-                    outcome = outcome,
-                )
-            operationStatistics.record(finished)
-            recordFinishedOperation(finished)
-            if (enabled) {
-                if (
-                    operation.recording != null &&
-                        (outcome == "returned" || outcome == "null" || outcome == "false")
-                )
-                    return
-                record(
-                    operation.runId,
-                    MatchStage.Idle,
-                    "operation_finished",
-                    operation.rule,
-                    entrySource = "operation",
-                    operation = finished,
-                )
             } else {
                 if (events.size == capacity) {
                     events.removeFirst()
-                    state.value = checkNotNull(state.value).copy(dropped = current.dropped + 1)
+                    state.value = updated.copy(dropped = updated.dropped + 1)
                 }
-                val event =
-                    MatchTrace(
-                        ++sequence,
-                        wallTime(),
-                        nanoTime() - origin,
-                        operation.runId,
-                        MatchStage.Idle,
-                        "operation_finished_after_stop",
-                        operation.rule,
-                        entrySource = "operation",
-                        operation = finished,
-                    )
                 events.addLast(event)
                 retainKeyEvent(event)
-                onStoppedCapture(export(current.id))
             }
+            onStoppedCapture(export(operation.sessionId))
+            if (previous != null) pruneStoppedSessions(operation.sessionId)
         }
     }
 
@@ -711,7 +843,8 @@ class MatchDiagnostics(
     }
 
     private fun retainKeyEvent(event: MatchTrace) {
-        if (event.serviceConnection != null || event.pageObservation != null) {
+        if (event.isQueryFault()) protectQueryContext(event.reason)
+        if (event.isBoundaryTrace()) {
             if (boundaryEvents.size == capacity) {
                 boundaryEvents.removeFirst()
                 droppedBoundaryEvents++
@@ -765,6 +898,7 @@ class MatchDiagnostics(
                     entries.map { (key, count) -> MatchEntrySummary(key.first, key.second, count) },
                     queryRecordings = queryRecordings.map { it.snapshot() },
                     droppedQueryRecordings = droppedQueryRecordings,
+                    droppedQuerySummaries = droppedQuerySummaries,
                     systemRecording = system,
                     initialRules = initialRules,
                     ruleDefinitions = ruleDefinitions.toMap(),
@@ -779,6 +913,8 @@ class MatchDiagnostics(
                     droppedKeyEvents = droppedKeyEvents,
                     boundaryEvents = boundaryEvents.toList(),
                     droppedBoundaryEvents = droppedBoundaryEvents,
+                    accessibilitySettings = accessibilitySettings,
+                    droppedAccessibilitySettings = droppedAccessibilitySettings,
                 ),
             )
         }

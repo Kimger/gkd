@@ -29,12 +29,12 @@ plugins {
 }
 
 extra["gkdVersionName"] = buildProperty("GKD_VERSION_NAME").orNull
-    ?: ("1.13.0-beta-7" + project.gitInfo.versionNameSuffix.orEmpty())
+    ?: ("1.13.0" + project.gitInfo.versionNameSuffix.orEmpty())
 extra["gkdVersionCode"] = buildProperty("GKD_VERSION_CODE").orNull?.let {
     requireNotNull(it.toIntOrNull()?.takeIf { code -> code in 1..2100000000 }) {
         "GKD_VERSION_CODE must be a positive Android version code"
     }
-} ?: 99
+} ?: 100
 
 object Cfg {
     val compileSdk

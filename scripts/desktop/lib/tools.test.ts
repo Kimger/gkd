@@ -13,6 +13,31 @@ import { withExistingDebugConnection } from './device-debug-connection.ts';
 import { checkBinderTrace, type BinderTrace, type NodeBenchmark } from '../commands/summarize-binder.ts';
 import { collectExpressionCorpus } from '../commands/expression-corpus.ts';
 
+test('summary renders structured conditions and preserves descriptions in older captures', async () => {
+  await mkdir(desktopTests, { recursive: true });
+  const dir = await mkdtemp(join(desktopTests, 'diagnostic-conditions-'));
+  try {
+    const input = join(dir, 'capture.json');
+    const condition = {
+      selectorPart: 'matches[0]', node: 1, unit: 0, property: 2, kind: 'comparison',
+      expression: 'text="expected"', matched: false,
+      left: { type: 'string', value: 'line\n"quoted"', truncated: true },
+      right: { type: 'null', value: null },
+    };
+    const event = { sequence: 1, elapsedNanos: 1, runId: 1, stage: 'Selector', reason: 'comparison', condition };
+    const capture = { session: { id: 'session', active: false }, events: [event] };
+    await writeFile(input, JSON.stringify(capture));
+    const summary = await summarizeMatching(input);
+    const description = 'matches[0] node=1 unit=0 property=2 comparison: text="expected" left="line\\n\\"quoted\\""… right=null -> false';
+    assert.equal(summary.recentConditions[0]?.reason, description);
+    assert.deepEqual(summary.recentConditions[0]?.condition, condition);
+    // Older files already contain the derived reason; their output remains equivalent.
+    event.reason = description;
+    await writeFile(input, JSON.stringify(capture));
+    assert.deepEqual((await summarizeMatching(input)).recentConditions, summary.recentConditions);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('summary distinguishes cumulative timings from evicted detail and exposes retained time ranges', async () => {
   await mkdir(desktopTests, { recursive: true });
   const dir = await mkdtemp(join(desktopTests, 'diagnostic-totals-'));
@@ -32,9 +57,9 @@ test('summary distinguishes cumulative timings from evicted detail and exposes r
     assert.equal(summary.operationStatistics?.completed, 100);
     assert.equal(summary.operationStatistics?.totals[0]?.meanMillis, 10);
     assert.equal(summary.operationStatistics?.totals[0]?.slowest.durationMillis, 90);
-    assert.equal(summary.coverage.events.firstElapsedMillis, 500);
-    assert.equal(summary.coverage.system.lastElapsedMillis, 20);
-    assert.equal(summary.coverage.queries.firstElapsedMillis, null);
+    assert.equal(summary.evidenceCoverage.retention.events.firstElapsedMillis, 500);
+    assert.equal(summary.evidenceCoverage.retention.systemSteps.lastElapsedMillis, 20);
+    assert.equal(summary.evidenceCoverage.retention.queryRecordings.firstElapsedMillis, null);
     assert.equal(summary.entryTotals[0].count, 123);
     assert.ok(summary.warnings.some(w => w.includes('分组上限')));
     assert.equal(summary.operations.length, 0);
@@ -319,7 +344,7 @@ test('offline summary distinguishes incomplete traces, cancellation cleanup and 
     await writeFile(input, JSON.stringify({ session: { id: 'empty', active: false }, events: [] }));
     const empty = await summarizeMatching(input);
     assert.ok(empty.warnings.some(warning => warning.includes('没有采集到事件')));
-    assert.equal(empty.evidenceCoverage.key.available, false);
+    assert.equal(empty.evidenceCoverage.retention.keyEvents.available, false);
     assert.deepEqual(empty.pageLatency, []);
     await writeFile(input, JSON.stringify({ session: { id: 'disconnected', active: false },
       events: [event(1, 1, 0, 'Action', 'action_started'), event(2, 1, 20, 'Cancelling', 'service_disconnected')],

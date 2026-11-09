@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import kotlinx.atomicfu.atomic
+import li.gkd.app.logging.LogUtils
 import li.gkd.app.matching.diagnostics.MatchServiceConnection
 import li.gkd.app.matching.diagnostics.MatchServiceEvent
 import li.gkd.app.matching.diagnostics.MatchStage
@@ -21,17 +22,21 @@ object AndroidAutomationSessions {
         event: MatchServiceEvent,
         target: AndroidAutomationSession? = null,
     ) {
+        val connection =
+            MatchServiceConnection(
+                event,
+                service.mode,
+                service.matchHost.connectionId,
+                target?.matchHost?.connectionId,
+            )
+        if (event != MatchServiceEvent.QueryStarted) {
+            LogUtils.i(connection)
+        }
         MatchingRuntime.coordinator.diagnostics.record(
             0,
             MatchStage.Idle,
             event.name,
-            serviceConnection =
-                MatchServiceConnection(
-                    event,
-                    service.mode,
-                    service.matchHost.connectionId,
-                    target?.matchHost?.connectionId,
-                ),
+            serviceConnection = connection,
         )
     }
 
@@ -76,7 +81,7 @@ object AndroidAutomationSessions {
 
     // Keep each read bound to its selected service and update that engine's root cache.
     fun getRoot(service: AndroidAutomationSession? = this.service): AccessibilityNodeInfo? =
-        service?.matchHost?.safeActiveWindow
+        service?.matchHost?.readActiveWindow()
 
     fun compatWindows(): List<AccessibilityWindowInfo> {
         return readA11yWindow(MatchingRuntime.coordinator.diagnostics, "Windows") {

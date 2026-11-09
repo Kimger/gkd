@@ -12,6 +12,7 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.LauncherApps
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.database.ContentObserver
 import android.hardware.display.DisplayManager
 import android.hardware.input.InputManager
@@ -44,11 +45,13 @@ import li.gkd.app.matching.input.initScreenEvents
 import li.gkd.app.notif.NotificationChannels
 import li.gkd.app.platform.lifecycle.MainActivityVisibility
 import li.gkd.app.platform.lifecycle.RuntimeStateSynchronizer
+import li.gkd.app.platform.overlay.KeepAliveOverlayCoordinator
 import li.gkd.app.priv.PrivilegeOwnerLifecycle
 import li.gkd.app.priv.gkdPrivilegeUiConfig
 import li.gkd.app.priv.initPrivilege
 import li.gkd.app.priv.requestPrivilegeRecovery
 import li.gkd.app.service.clearDebugSubscription
+import li.gkd.app.settings.syncSystemLanguage
 import li.gkd.app.snapshot.initVolumeSnapshotTrigger
 import li.gkd.app.subscription.SubscriptionDefaults
 import li.gkd.app.subscription.SubscriptionRepository
@@ -225,6 +228,7 @@ class App : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        syncSystemLanguage()
         AndroidToastUtils.init()
         installCrashHandler()
         Db.initialize(this, AndroidStorage.storage.database.absolutePath)
@@ -267,6 +271,7 @@ class App : Application() {
     }
 
     private fun initializeRuntimeComponents() {
+        KeepAliveOverlayCoordinator.initialize()
         NotificationChannels.initialize()
         PackageAppCatalog.initialize()
         initMatchingRuleObservers()
@@ -282,5 +287,10 @@ class App : Application() {
             clearDebugSubscription()
         }
         RuntimeStateSynchronizer.requestSync()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        syncSystemLanguage()
     }
 }

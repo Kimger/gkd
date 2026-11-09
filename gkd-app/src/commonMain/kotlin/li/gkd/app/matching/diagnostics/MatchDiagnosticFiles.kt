@@ -4,17 +4,17 @@ import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.*
 import li.gkd.app.app.applicationScope
 import li.gkd.app.logging.LogUtils
 import li.gkd.app.storage.appStorage
-import li.gkd.app.util.JsonUtils
 import li.gkd.db.Db
 import li.gkd.db.MatchDiagnosticRecord
 
@@ -32,7 +32,33 @@ class MatchDiagnosticFileStore(private val directory: File) {
         val target = captureDirectory.resolve("diagnostic.json")
         val temporary = Files.createTempFile(captureDirectory.toPath(), "capture-", ".tmp")
         try {
-            temporary.toFile().writeText(JsonUtils.keepingNulls.encodeToString(capture))
+            val archive = prepareDiagnosticArchive(capture)
+            val sections =
+                linkedMapOf(
+                    "accessibilitySettings" to "accessibility-settings.jsonl",
+                    "events" to "events.jsonl",
+                    "keyEvents" to "key-events.jsonl",
+                    "boundaryEvents" to "boundary-events.jsonl",
+                    "querySummaries" to "query-summaries.jsonl",
+                    "queryDetails" to "query-details.jsonl",
+                    "queryPlans" to "query-plans.json",
+                    "systemRecording" to "system-recording.json",
+                )
+            for ((key, name) in sections) {
+                val value = archive.getValue(key)
+                val file = captureDirectory.resolve(name)
+                if (name.endsWith(".jsonl")) {
+                    file.bufferedWriter().use { writer ->
+                        value.jsonArray.forEach { writer.appendLine(it.toString()) }
+                    }
+                } else file.writeText(value.toString())
+            }
+            val metadata =
+                JsonObject(
+                    archive.filterKeys { it !in sections } +
+                        ("files" to JsonObject(sections.mapValues { JsonPrimitive(it.value) })),
+                )
+            temporary.toFile().writeText(metadata.toString())
             Files.move(temporary, target.toPath(), StandardCopyOption.REPLACE_EXISTING)
         } finally {
             Files.deleteIfExists(temporary)
@@ -62,6 +88,8 @@ class MatchDiagnosticFileStore(private val directory: File) {
 
 data class MatchDiagnosticSaveState(
     val id: String,
+    val startedAt: Long,
+    val trackingComplete: Boolean,
     val saved: Boolean = false,
     val error: String? = null,
 )
@@ -69,31 +97,44 @@ data class MatchDiagnosticSaveState(
 /** Stopped immutable snapshots survive page disposal; failed writes are retried by log sharing. */
 object MatchDiagnosticFiles {
     private val lock = Any()
-    private val pending = ArrayDeque<MatchDiagnosticCapture>()
+    private val pending = linkedMapOf<String, MatchDiagnosticCapture>()
     private val writing = Mutex()
+    private val saveRequests = Channel<Unit>(Channel.CONFLATED)
+    private val writer by lazy {
+        applicationScope().launch(Dispatchers.IO) {
+            for (request in saveRequests) {
+                try {
+                    flush()
+                } catch (error: Exception) {
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    LogUtils.e("Saving matching diagnostic failed", error)
+                }
+            }
+        }
+    }
     private val store by lazy { MatchDiagnosticFileStore(appStorage().matchingDiagnostics) }
     val state: StateFlow<Map<String, MatchDiagnosticSaveState>>
         field = MutableStateFlow(emptyMap())
 
     private fun updateState(value: MatchDiagnosticSaveState) {
         val ordered = (state.value - value.id) + (value.id to value)
-        val retained = ordered.keys.toList().takeLast(5).toSet() + pending.map { it.session.id }
+        val retained = ordered.keys.toList().takeLast(5).toSet() + pending.keys
         state.value = ordered.filterKeys { it in retained }
     }
 
     fun enqueue(capture: MatchDiagnosticCapture) {
         synchronized(lock) {
-            pending.addLast(capture)
-            updateState(MatchDiagnosticSaveState(capture.session.id))
+            pending[capture.session.id] = capture
+            updateState(
+                MatchDiagnosticSaveState(
+                    capture.session.id,
+                    capture.session.startedAt,
+                    capture.session.trackingComplete,
+                ),
+            )
         }
-        applicationScope().launch(Dispatchers.IO) {
-            try {
-                flush()
-            } catch (error: Exception) {
-                if (error is kotlinx.coroutines.CancellationException) throw error
-                LogUtils.e("Saving matching diagnostic failed", error)
-            }
-        }
+        writer.start()
+        saveRequests.trySend(Unit)
     }
 
     fun directory(record: MatchDiagnosticRecord): File = store.directory(record.id)
@@ -102,6 +143,9 @@ object MatchDiagnosticFiles {
         records.forEach { record ->
             store.delete(record.id)
             Db.matchDiagnosticRecordDao.delete(record.id)
+            synchronized(lock) {
+                state.value = state.value.filterValues { it.startedAt != record.id }
+            }
         }
     }
 
@@ -111,28 +155,29 @@ object MatchDiagnosticFiles {
         withContext(Dispatchers.IO) {
             writing.withLock {
                 while (true) {
-                    val capture = synchronized(lock) { pending.firstOrNull() } ?: break
-                    try {
-                        store.save(capture)?.let { Db.matchDiagnosticRecordDao.upsert(it) }
-                    } catch (error: Exception) {
-                        synchronized(lock) {
-                            updateState(
-                                MatchDiagnosticSaveState(
-                                    capture.session.id,
-                                    error = error.toString(),
-                                ),
-                            )
-                        }
-                        throw error
-                    }
-                    synchronized(lock) {
-                        pending.removeFirst()
-                        updateState(
-                            MatchDiagnosticSaveState(
-                                capture.session.id,
-                                saved = pending.none { it.session.id == capture.session.id },
-                            ),
+                    val capture = synchronized(lock) { pending.values.firstOrNull() } ?: break
+                    val saving =
+                        MatchDiagnosticSaveState(
+                            capture.session.id,
+                            capture.session.startedAt,
+                            capture.session.trackingComplete,
                         )
+                    synchronized(lock) { updateState(saving) }
+                    val record =
+                        try {
+                            store.save(capture)?.also { Db.matchDiagnosticRecordDao.upsert(it) }
+                        } catch (error: Exception) {
+                            synchronized(lock) {
+                                updateState(saving.copy(error = error.toString()))
+                            }
+                            throw error
+                        }
+                    synchronized(lock) {
+                        // A late completion may replace this session while its file is written.
+                        if (pending[capture.session.id] === capture)
+                            pending.remove(capture.session.id)
+                        if (record == null) state.value = state.value - capture.session.id
+                        else updateState(saving.copy(saved = capture.session.id !in pending))
                     }
                 }
                 block()

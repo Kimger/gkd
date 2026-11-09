@@ -32,6 +32,97 @@ import li.gkd.app.subscription.UsedSubsEntry
 import li.gkd.db.SubsItem
 
 class MatchDiagnosticsTest {
+    /** Issue 1522: successful reads after recovery must not evict the preceding failures. */
+    @Test
+    fun foregroundFailuresSurviveRecoveryTrafficAndLateFailureStaysInOriginalSession() {
+        val diagnostics = MatchDiagnostics()
+        val session = diagnostics.start(MatchTimingPolicy(), capacity = 10)
+        val task = MatchTaskObservation(1, "onTaskMovedToFront(info)", "app", "Main")
+        diagnostics.record(0, MatchStage.Root, "task_result_applied", taskObservation = task)
+        diagnostics.entry("root_read", "root_unavailable")
+        diagnostics.entry("foreground_confirmation", "foreground_wait_expired")
+        val pending = diagnostics.beginOperation("ActiveWindow")!!
+        repeat(40) {
+            diagnostics.entry("root_read", "root_ready")
+            diagnostics.record(1, MatchStage.Selector, "matches[0]:miss")
+            diagnostics.endOperation(diagnostics.beginOperation("Query"), "not_matched")
+        }
+        diagnostics.stop(session.id)
+        val capture = diagnostics.export(session.id)
+        assertTrue(capture.session.dropped > 0)
+        assertTrue(capture.droppedKeyEvents > 0)
+        assertEquals(
+            listOf("task_result_applied", "root_unavailable", "foreground_wait_expired"),
+            capture.boundaryEvents.map { it.reason },
+        )
+        assertEquals(task, capture.boundaryEvents.first().taskObservation)
+        val next = diagnostics.start(MatchTimingPolicy())
+        diagnostics.endOperation(pending, "java.lang.SecurityException: denied")
+        val previous = diagnostics.export(session.id)
+        assertEquals(
+            "java.lang.SecurityException: denied",
+            previous.boundaryEvents.last().operation?.outcome,
+        )
+        assertTrue(diagnostics.export(next.id).boundaryEvents.isEmpty())
+    }
+
+    /**
+     * Repeated failures retain their events, but stack collection is bounded and resets per
+     * session.
+     */
+    @Test
+    fun nodeStackSamplingIsPerFailureAndSessionWithoutDroppingPressure() {
+        var nanos = 0L
+        var samples = 0
+        val diagnostics = MatchDiagnostics(nanoTime = { nanos }, wallTime = { 0 })
+        val session = diagnostics.start(MatchTimingPolicy())
+        val snapshot = {
+            samples++
+            MatchNodeExecutorSnapshot(0, 0, 4, 10, 10, 0, false, false, false, emptyList())
+        }
+        repeat(3) {
+            diagnostics.nodeReadPressure(
+                MatchNodeReadFailure.CapacityExceeded,
+                0,
+                4,
+                session.id,
+                executorSnapshot = snapshot,
+            )
+        }
+        assertEquals(1, samples)
+        diagnostics.nodeReadPressure(
+            MatchNodeReadFailure.Timeout,
+            1,
+            4,
+            session.id,
+            executorSnapshot = snapshot,
+        )
+        assertEquals(2, samples)
+        nanos = 1_000_000_000L
+        diagnostics.nodeReadPressure(
+            MatchNodeReadFailure.CapacityExceeded,
+            0,
+            4,
+            session.id,
+            executorSnapshot = snapshot,
+        )
+        assertEquals(3, samples)
+        val pressures = diagnostics.export(session.id).events.mapNotNull { it.nodePressure }
+        assertEquals(5, pressures.size)
+        assertEquals(2, pressures.count { it.executorSnapshotSkipped })
+        assertTrue(pressures.filter { it.executorSnapshotSkipped }.all { it.executor == null })
+        diagnostics.stop(session.id)
+        val next = diagnostics.start(MatchTimingPolicy())
+        diagnostics.nodeReadPressure(
+            MatchNodeReadFailure.CapacityExceeded,
+            0,
+            4,
+            next.id,
+            executorSnapshot = snapshot,
+        )
+        assertEquals(4, samples)
+    }
+
     @Test
     fun boundaryTimelineSurvivesQueryOverflowAndReportsItsOwnLoss() {
         val diagnostics = MatchDiagnostics()
@@ -340,6 +431,45 @@ class MatchDiagnosticsTest {
         assertTrue(diagnostics.export(next.id).events.isEmpty())
     }
 
+    @Test
+    fun delayedPublicationKeepsCompletionTimeAndBoundedEventsForBothStoppedSessionPaths() {
+        for (replace in listOf(false, true)) {
+            var nanos = 1_000L
+            val saved = mutableListOf<MatchDiagnosticCapture>()
+            val diagnostics = MatchDiagnostics(nanoTime = { nanos }, onStoppedCapture = saved::add)
+            val session = diagnostics.start(MatchTimingPolicy(), capacity = 10)
+            val operations = List(12) { diagnostics.beginOperation("NodeRead:Root")!! }
+            diagnostics.stop(session.id)
+            if (replace) {
+                nanos = 5_000L
+                diagnostics.start(MatchTimingPolicy())
+            }
+            nanos = 20_000L // Publication is later than the physical completion.
+            operations.forEach {
+                diagnostics.endOperation(
+                    it,
+                    "returned",
+                    startedNanos = 2_000L,
+                    finishedNanos = 4_000L,
+                )
+            }
+            val capture = diagnostics.export(session.id)
+            assertEquals(10, capture.events.size)
+            assertEquals(10, capture.keyEvents.size)
+            // Twelve starts and twelve completions share the ten-event rings.
+            assertEquals(14L, capture.droppedKeyEvents)
+            assertEquals(14L, capture.session.dropped)
+            assertEquals(12L, capture.operationStatistics!!.completed)
+            assertEquals(operations, capture.session.operationsAtStop)
+            assertTrue(capture.session.trackingComplete)
+            assertTrue(capture.events.all { it.elapsedNanos == 3_000L })
+            assertTrue(capture.events.all { it.operation!!.durationNanos == 2_000L })
+            assertEquals(capture, saved.last())
+            diagnostics.endOperation(operations.last(), "duplicate")
+            assertEquals(12, saved.size)
+        }
+    }
+
     @kotlin.test.Test
     fun actionApiTimingKeepsItsParentAcrossDispatcherChanges() =
         kotlinx.coroutines.test.runTest {
@@ -418,8 +548,13 @@ class MatchDiagnosticsTest {
         // An in-flight query may complete during action cleanup, after Stop.
         diagnostics.registerQuery(session.id, MatchQueryEvidence(query(40)))
         val capture = diagnostics.export(session.id)
-        assertEquals((9L..40L).toList(), capture.queryRecordings.map { it.runId })
+        assertEquals(
+            (9L..40L).toList(),
+            capture.queryRecordings.filter { it.detailsRetained }.map { it.runId },
+        )
         assertEquals(9L, capture.droppedQueryRecordings)
+        assertEquals(41, capture.queryRecordings.size)
+        assertEquals(0L, capture.droppedQuerySummaries)
         assertEquals(
             capture,
             Json.decodeFromString<MatchDiagnosticCapture>(Json.encodeToString(capture)),
@@ -489,9 +624,24 @@ class MatchDiagnosticsTest {
             },
         )
         assertEquals(null, diagnostics.beginOperation("Root"))
-        diagnostics.nodeReadPressure(MatchNodeReadFailure.Timeout, 1, 4)
+        diagnostics.nodeReadPressure(MatchNodeReadFailure.Timeout, 1, 4) {
+            error("Disabled diagnostics must not collect executor state or stacks")
+        }
         diagnostics.entry("event_queue", "event_queue_overflow")
         assertEquals(null, diagnostics.state.value)
+    }
+
+    /** A failed read from a stopped session must not sample workers for the replacement session. */
+    @Test
+    fun oldSessionPressureDoesNotCaptureExecutor() {
+        val diagnostics = MatchDiagnostics()
+        val old = diagnostics.start(MatchTimingPolicy())
+        diagnostics.stop(old.id)
+        val next = diagnostics.start(MatchTimingPolicy())
+        diagnostics.nodeReadPressure(MatchNodeReadFailure.CapacityExceeded, 0, 4, old.id) {
+            error("Old session must not collect executor state or stacks")
+        }
+        assertTrue(diagnostics.export(next.id).events.isEmpty())
     }
 
     /**
