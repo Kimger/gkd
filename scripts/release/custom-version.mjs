@@ -16,8 +16,8 @@ export function nextVersion(source, previousCode = 0) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  // Version 102 was distributed locally before the GitHub release.
-  const localReleaseCode = 102;
+  // Version 104 was distributed locally before the GitHub release.
+  const localReleaseCode = 104;
   const previousCode = Math.max(localReleaseCode, Number(process.env.PREVIOUS_VERSION_CODE || 0));
   const version = nextVersion(readFileSync('build.gradle.kts', 'utf8'), previousCode);
   appendFileSync(process.env.GITHUB_ENV,
