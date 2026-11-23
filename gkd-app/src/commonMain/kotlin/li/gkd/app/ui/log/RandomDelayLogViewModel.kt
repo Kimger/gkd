@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import li.gkd.app.logging.RandomDelayLog
 import li.gkd.app.logging.readRandomDelayLogs
+import li.gkd.app.storage.HistoryDirectory
 import li.gkd.app.storage.appStorage
 import li.gkd.app.ui.state.BaseViewModel
 import li.gkd.app.logging.LogUtils
@@ -29,8 +30,10 @@ private class RandomDelayLogPagingSource : PagingSource<Int, RandomDelayLog>() {
         withContext(Dispatchers.IO) {
             try {
                 val records = snapshot ?: run {
+                    val storage = appStorage()
+                    storage.awaitHistoryMigration(HistoryDirectory.Log)
                     LogUtils.flush()
-                    readRandomDelayLogs(appStorage().log).also { snapshot = it }
+                    readRandomDelayLogs(storage.log).also { snapshot = it }
                 }
                 val start = params.key ?: 0
                 val end = minOf(start + params.loadSize, records.size)

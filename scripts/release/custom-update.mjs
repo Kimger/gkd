@@ -7,7 +7,8 @@ export function createUpdate({ repository, versionCode, versionName, apkName, fi
   if (!Number.isSafeInteger(versionCode) || versionCode < 1 || versionCode > 2100000000) {
     throw new Error('Invalid version code');
   }
-  if (!/^\d+\.\d+\.\d+(?:-[\w.-]+)?-custom\.[1-9]\d*$/.test(versionName)) {
+  const revision = /^\d+\.\d+\.\d+(?:-[\w.-]+)?-r([1-9]\d*)$/.exec(versionName)?.[1];
+  if (revision !== String(versionCode)) {
     throw new Error('Invalid custom version name');
   }
   if (apkName !== `gkd-${versionName}.apk`) throw new Error('Unexpected APK name');
