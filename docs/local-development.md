@@ -7,7 +7,7 @@
 
 工具标准目录（`.gradle`、`.kotlin`、`node_modules`、模块 `build`）保持默认。应用自身存储布局中的缓存、日志与临时文件仍由应用管理，不属于开发任务的临时杂项。
 
-设备工具的临时工作目录为 `.temp/device-install/update-*/`、`.temp/test-app-cleanup/round-*/`、`.temp/matching-debug/capture-*/`；安装弹窗识别日志位于 `.temp/install-confirmation/attempt-*/`。设备设置传输中间文件位于 `.temp/device-automation/store-*/` 与 `scope-*/`，selector 下载中间文件位于 `.temp/selector-dist/download-*/`，操作结束后清理各自会话目录。设备设置恢复记录仍保存在 `.local/device-recovery/`，测试应用安装记录仍保存在 `.local/device-test-apps/`。
+设备工具的临时工作目录为 `.temp/test-app-cleanup/round-*/`、`.temp/matching-debug/capture-*/`；安装弹窗识别日志位于 `.temp/install-confirmation/attempt-*/`。设备设置传输中间文件位于 `.temp/device-automation/store-*/` 与 `scope-*/`，selector 下载中间文件位于 `.temp/selector-dist/download-*/`，操作结束后清理各自会话目录。设备设置恢复记录仍保存在 `.local/device-recovery/`，测试应用安装记录仍保存在 `.local/device-test-apps/`。
 
 Windows 绿色版脱离仓库运行时，以 `GKD.exe` 所在目录为根，沿用相同的 `.local/` 数据布局；不会访问打包机器的仓库路径。
 
@@ -28,7 +28,7 @@ Windows 绿色版脱离仓库运行时，以 `GKD.exe` 所在目录为根，沿�
 
 ## 应用存储布局
 
-Android 与 Desktop 共用 `AppStorageLayout`，宿主注入 files/cache/privateFiles 根目录。Desktop 的 `data/` 对应 Android 外部应用目录：
+Android 与 Desktop 共用 `AppStorageLayout`。Android 使用应用私有的 `files/` 和 `cache/`，Desktop 在 `data/` 下使用相同布局。
 
 | 相对 `data/` 的路径 | 消费者 |
 | --- | --- |
@@ -44,7 +44,7 @@ Android 与 Desktop 共用 `AppStorageLayout`，宿主注入 files/cache/private
 | `cache/webview/` | 网页用户数据 |
 | `cache/shared/` | 备份、日志等共享输出 |
 
-Desktop 整个 data 目录视为私有，privateFiles 与 files 共用根目录；Android 私有存储仍使用系统内部目录。设备资料、导入标记与模拟配置位于 data 外。WebView2 内核使用系统安装目录，原生 DLL 由依赖自身的临时加载机制处理。
+两端的 privateFiles 与 files 共用根目录。Android 升级时，核心数据先迁入内部存储，历史文件和外部清理在后台处理，迁入的旧日志以 `-migrated.log` 结尾。已有 `.gkd` 的安装直接使用内部数据，外部目录不可用时也直接初始化内部数据。设备资料、导入标记与模拟配置位于 data 外。WebView2 内核使用系统安装目录，原生 DLL 由依赖自身的临时加载机制处理。
 
 ## 隔离与清理
 

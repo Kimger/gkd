@@ -22,7 +22,8 @@ fun readRandomDelayLogs(directory: File): List<RandomDelayLog> {
     val appPattern = Regex("(?:^|[, ])appId=([^,\\s]+)")
     val format = SimpleDateFormat("yyyyMMdd HH:mm:ss.SSS", Locale.ROOT).apply { isLenient = false }
     val result = mutableListOf<RandomDelayLog>()
-    for (file in files.filter { it.name.matches(Regex("gkd-\\d{8}(?:-\\d+)?\\.log")) }) {
+    val logName = Regex("gkd-\\d{8}(?:-\\d+)?(?:-migrated)?\\.log")
+    for (file in files.filter { logName.matches(it.name) }) {
         val date = file.name.substring(4, 12)
         var startLine = 0
         var timeText: String? = null

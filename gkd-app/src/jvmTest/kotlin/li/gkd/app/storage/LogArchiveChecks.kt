@@ -1,5 +1,6 @@
 package li.gkd.app.storage
 
+import java.io.File
 import java.io.IOException
 import java.util.zip.ZipFile
 import kotlin.test.assertEquals
@@ -12,10 +13,16 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import li.gkd.app.matching.diagnostics.MatchDiagnosticState
+import kotlinx.serialization.json.jsonPrimitive
 import li.gkd.app.matching.diagnostics.MatchDiagnosticFiles
+import li.gkd.app.matching.diagnostics.MatchDiagnosticState
 import li.gkd.app.matching.diagnostics.MatchDiagnostics
+import li.gkd.app.matching.diagnostics.MatchOperation
+import li.gkd.app.matching.diagnostics.expandPackedDiagnosticRow
 import li.gkd.app.matching.input.MatchTimingPolicy
 import li.gkd.app.util.JsonUtils
 import li.gkd.db.Db
@@ -30,21 +37,22 @@ class LogArchiveChecks {
         diagnostics.stop(first.id)
         val initial = diagnostics.export(first.id)
         val file = appStorage().matchingDiagnostics.resolve("${first.startedAt}/diagnostic.json")
-        fun readSavedSession(metadata: java.io.File): MatchDiagnosticState {
-            val session = JsonUtils.default.parseToJsonElement(metadata.readText()).jsonObject.getValue("session")
-            return JsonUtils.default.decodeFromString<MatchDiagnosticState>(session.toString())
-        }
         // Keep the real database write pending after the first file has been written. Replacing
         // that session must survive acknowledgement of the older capture.
         Db.withTransaction {
             files.enqueue(initial)
             withTimeout(5_000) { while (!file.isFile) delay(10) }
-            assertEquals(initial.session, readSavedSession(file))
+            val metadata = Json.parseToJsonElement(file.readText()).jsonObject
+            val session =
+                JsonUtils.default.decodeFromJsonElement<MatchDiagnosticState>(
+                    metadata.getValue("session"),
+                )
+            assertEquals(listOf(read), session.openOperations)
             diagnostics.endOperation(read, "returned")
         }
         files.flush()
         val completed = diagnostics.export(first.id)
-        assertEquals(completed.session, readSavedSession(file))
+        assertCompletedOperations(file, listOf(read.id))
         assertTrue(files.state.value.getValue(first.id).saved)
 
         wall++
@@ -60,10 +68,7 @@ class LogArchiveChecks {
         files.flush()
         val secondFile =
             appStorage().matchingDiagnostics.resolve("${second.startedAt}/diagnostic.json")
-        assertEquals(
-            diagnostics.export(second.id).session,
-            readSavedSession(secondFile),
-        )
+        assertCompletedOperations(secondFile, operations.map { it.id })
         assertTrue(files.state.value.getValue(second.id).saved)
         val records =
             Db.matchDiagnosticRecordDao.observeAll().first().filter {
@@ -73,13 +78,52 @@ class LogArchiveChecks {
         files.delete(records)
     }
 
-    fun archiveContainsMaterialsAndExpiredCacheIsCleanedByMaintenance() {
+    private fun assertCompletedOperations(file: File, expectedIds: List<Long>) {
+        val metadata = Json.parseToJsonElement(file.readText()).jsonObject
+        val session =
+            JsonUtils.default.decodeFromJsonElement<MatchDiagnosticState>(
+                metadata.getValue("session"),
+            )
+        assertTrue(session.openOperations.isEmpty())
+
+        val attachments = metadata.getValue("files").jsonObject
+        val directory = checkNotNull(file.parentFile)
+        val shapesFile =
+            directory.resolve(attachments.getValue("eventShapes").jsonPrimitive.content)
+        val shapes = Json.parseToJsonElement(shapesFile.readText()).jsonArray
+        val completed =
+            listOf("events", "keyEvents").flatMap { section ->
+                val eventsFile =
+                    directory.resolve(attachments.getValue(section).jsonPrimitive.content)
+                eventsFile.useLines { lines ->
+                    lines
+                        .map {
+                            expandPackedDiagnosticRow(Json.parseToJsonElement(it), shapes)
+                                .jsonObject
+                        }
+                        .filter {
+                            it["reason"]?.jsonPrimitive?.content == "operation_finished_after_stop"
+                        }
+                        .map {
+                            JsonUtils.default.decodeFromJsonElement<MatchOperation>(
+                                it.getValue("operation"),
+                            )
+                        }
+                        .toList()
+                }
+            }
+        assertEquals(expectedIds, completed.map { it.id })
+        assertEquals(List(expectedIds.size) { "returned" }, completed.map { it.outcome })
+    }
+
+    fun archiveContainsMaterialsAndExpiredCacheIsCleanedByMaintenance() = runBlocking {
         try {
             val layout = appStorage()
             val privilegeCrash = layout.tempCache.resolve("priv-crash").apply { mkdirs() }
-            privilegeCrash
-                .resolve("priv-crash_uid2000_20261007001234.json")
-                .writeText("{\"processType\":\"server\"}")
+            val report =
+                privilegeCrash.resolve("priv-crash_uid2000_20261007001234.json").apply {
+                    writeText("{\"processType\":\"server\"}")
+                }
             val previous = layout.tempCache.listFiles().orEmpty().toSet()
             layout.log.resolve("event.txt").writeText("event")
             val diagnostics = MatchDiagnostics()
@@ -159,7 +203,14 @@ class LogArchiveChecks {
                 )
             }
             val previousNormal = layout.tempCache.listFiles().orEmpty().toSet()
-            val archive = LogArchive.build(mapOf("apps.json" to { "[]" }), listOf(privilegeCrash))
+            val archive =
+                LogArchive.build(
+                    mapOf("apps.json" to { "[]" }),
+                    listOf(
+                        privilegeCrash.resolve("priv-crash_uid2000_20261007001233.json"),
+                        report,
+                    ),
+                )
             ZipFile(archive).use { zip ->
                 assertEquals(
                     "[]",
@@ -168,6 +219,7 @@ class LogArchiveChecks {
                         .readText(),
                 )
                 assertNull(zip.getEntry("apps.json"))
+                assertNull(zip.getEntry("priv-crash/priv-crash_uid2000_20261007001233.json"))
                 assertFalse(
                     zip.entries().asSequence().any { it.name.startsWith("matching-diagnostics/") },
                 )
@@ -219,7 +271,7 @@ class LogArchiveChecks {
         }
     }
 
-    fun materialFailurePreservesCauseAndLeavesFilesForCacheMaintenance() {
+    fun materialFailurePreservesCauseAndLeavesFilesForCacheMaintenance() = runBlocking {
         try {
             val layout = appStorage()
             for (error in

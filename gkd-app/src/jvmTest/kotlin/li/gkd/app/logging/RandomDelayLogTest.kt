@@ -12,7 +12,7 @@ class RandomDelayLogTest {
         root.mkdirs()
         val directory = Files.createTempDirectory(root.toPath(), "reader-").toFile()
         try {
-            directory.resolve("gkd-20261015.log").writeText(
+            directory.resolve("gkd-20261015-1-migrated.log").writeText(
                 """
                 23:59:59.001 A11yRuleEngine, worker, queryAction
                 [0]: Random action delay scheduled

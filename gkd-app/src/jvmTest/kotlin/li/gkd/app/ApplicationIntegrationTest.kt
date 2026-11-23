@@ -51,6 +51,7 @@ import li.gkd.app.storage.AppStorageLayout
 import li.gkd.app.storage.FileSource
 import li.gkd.app.storage.LogArchiveChecks
 import li.gkd.app.storage.appStorage
+import li.gkd.app.storage.assertDatabaseLogJsonExport
 import li.gkd.app.subscription.RawSubscriptionParser
 import li.gkd.app.subscription.SubscriptionDefaults
 import li.gkd.app.subscription.SubscriptionJson
@@ -194,6 +195,7 @@ class ApplicationIntegrationTest {
                     }
                     assertBackupSnapshotConsistency()
                     assertBackupRoundTrip(appStorage())
+                    assertDatabaseLogJsonExport()
                 }
             assertFailsWith<IllegalStateException> { isNetworkRequestAllowed() }
             assertFailsWith<IllegalStateException> { openAppCatalog() }
@@ -558,16 +560,20 @@ class ApplicationIntegrationTest {
                 vm.navigator.pop()
                 assertEquals(HomeRoute, vm.navigator.topRoute)
                 val previousHome = HomeState()
-                vm.homeNavigation.bind(previousHome)
+                vm.navigator.bindHomeState(previousHome)
                 state.load(ScenarioRequest("settings"))
-                vm.homeNavigation.unbind(previousHome)
+                vm.navigator.unbindHomeState(previousHome)
                 val nextHome = HomeState()
-                vm.homeNavigation.bind(nextHome)
+                vm.navigator.bindHomeState(nextHome)
                 assertEquals(BottomNavItem.Settings, nextHome.selectedTab.value)
+                vm.navigator.navigate(AboutRoute)
+                state.handleGkdUri("gkd://page?tab=${BottomNavItem.AppList.key}")
+                assertEquals(HomeRoute, vm.navigator.topRoute)
+                assertEquals(BottomNavItem.AppList, nextHome.selectedTab.value)
                 kotlin.test.assertSame(vm, state.mainVm)
                 kotlin.test.assertSame(vm, MainViewModel.requireCurrent())
                 assertTrue(rootJob.isActive)
-                vm.homeNavigation.unbind(nextHome)
+                vm.navigator.unbindHomeState(nextHome)
             } finally {
                 state.close()
             }

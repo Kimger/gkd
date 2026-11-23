@@ -7,6 +7,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -14,6 +16,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 import li.gkd.app.app.applicationScope
 import li.gkd.app.logging.LogUtils
+import li.gkd.app.storage.HistoryDirectory
 import li.gkd.app.storage.appStorage
 import li.gkd.db.Db
 import li.gkd.db.MatchDiagnosticRecord
@@ -39,23 +42,22 @@ class MatchDiagnosticFileStore(private val directory: File) {
                     "events" to "events.jsonl",
                     "keyEvents" to "key-events.jsonl",
                     "boundaryEvents" to "boundary-events.jsonl",
+                    "traceStrings" to "trace-strings.json",
+                    "eventShapes" to "event-shapes.json",
                     "querySummaries" to "query-summaries.jsonl",
                     "queryDetails" to "query-details.jsonl",
                     "queryPlans" to "query-plans.json",
                     "systemRecording" to "system-recording.json",
                 )
             for ((key, name) in sections) {
-                val value = archive.getValue(key)
                 val file = captureDirectory.resolve(name)
-                if (name.endsWith(".jsonl")) {
-                    file.bufferedWriter().use { writer ->
-                        value.jsonArray.forEach { writer.appendLine(it.toString()) }
-                    }
-                } else file.writeText(value.toString())
+                file.bufferedWriter().use { writer ->
+                    archive.writeSection(key, lines = name.endsWith(".jsonl"), writer)
+                }
             }
             val metadata =
                 JsonObject(
-                    archive.filterKeys { it !in sections } +
+                    archive.metadata +
                         ("files" to JsonObject(sections.mapValues { JsonPrimitive(it.value) })),
                 )
             temporary.toFile().writeText(metadata.toString())
@@ -139,6 +141,11 @@ object MatchDiagnosticFiles {
 
     fun directory(record: MatchDiagnosticRecord): File = store.directory(record.id)
 
+    fun observeRecords() = flow {
+        appStorage().awaitHistoryMigration(HistoryDirectory.MatchDiagnostics)
+        emitAll(Db.matchDiagnosticRecordDao.observeAll())
+    }
+
     suspend fun delete(records: List<MatchDiagnosticRecord>) = withSavedFiles {
         records.forEach { record ->
             store.delete(record.id)
@@ -153,6 +160,7 @@ object MatchDiagnosticFiles {
 
     suspend fun <T> withSavedFiles(block: suspend () -> T): T =
         withContext(Dispatchers.IO) {
+            appStorage().awaitHistoryMigration(HistoryDirectory.MatchDiagnostics)
             writing.withLock {
                 while (true) {
                     val capture = synchronized(lock) { pending.values.firstOrNull() } ?: break

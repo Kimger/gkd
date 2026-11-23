@@ -14,19 +14,21 @@ import li.gkd.app.logging.LogUtils
 import li.gkd.app.matching.input.ActivityScene
 import li.gkd.app.matching.input.updateTopActivity
 import li.gkd.app.permission.PermissionStates
+import li.gkd.app.priv.shizuku.GkdShizukuExternalStartProvider
 import li.gkd.app.resources.*
 import li.gkd.app.service.StatusService
 import li.gkd.app.service.currentAppBlocked
 import li.gkd.app.service.switchA11yServiceForPrivilegeChange
 import li.gkd.app.settings.SettingsRepository
-import li.gkd.app.util.AndroidStorage
 import li.gkd.app.util.ToastUtils
 import li.gkd.app.util.launchLogged
 import priv.kit.core.Privilege
-import priv.kit.core.PrivilegeConfig
 import priv.kit.core.PrivilegeServerInfo
 import priv.kit.core.userservice.PrivilegeUserServiceProcess
 import priv.kit.core.userservice.PrivilegeUserServiceSpec
+import priv.kit.ui.PrivilegeUi
+import priv.kit.ui.PrivilegeUiStartMethod
+import rikka.shizuku.Shizuku
 
 val currentUserId by lazy { Process.myUserHandle().hashCode() }
 
@@ -38,7 +40,7 @@ private val privilegeContextMutex = Mutex()
 private val userServiceSpec =
     PrivilegeUserServiceSpec(
         serviceClassName = UserService::class.java.name,
-        version = 8, // Bump whenever the UserService implementation or its AIDL contract changes.
+        version = 9, // Bump whenever the UserService implementation or its AIDL contract changes.
         process = PrivilegeUserServiceProcess.EMBEDDED,
     )
 
@@ -110,9 +112,7 @@ suspend fun recoverPrivilegeContext() {
 }
 
 fun initPrivilege() {
-    PrivilegeConfig.crashLogDirectory = AndroidStorage.privilegeCrashDirectory
     PrivilegeOwnerLifecycle.initialize()
-    listenForShizukuPrivilegeRecovery()
 
     appScope.launchLogged(Dispatchers.IO) {
         var wasConnected = false
@@ -130,6 +130,18 @@ fun initPrivilege() {
                 ToastUtils.show(Res.string.privilege_service_state_update_failed.getSync(e.message))
             }
             if (disconnected) requestPrivilegeRecovery()
+        }
+    }
+    Shizuku.addBinderReceivedListenerSticky {
+        appScope.launchLogged(Dispatchers.IO) {
+            val shizukuStartMethod =
+                PrivilegeUiStartMethod.External(GkdShizukuExternalStartProvider.id)
+            if (
+                PrivilegeUi.getLastStartMethod() == shizukuStartMethod &&
+                    GkdShizukuExternalStartProvider.snapshot(app).canStart
+            ) {
+                recoverPrivilege(ignoreCooldown = true)
+            }
         }
     }
 }

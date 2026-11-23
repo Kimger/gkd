@@ -153,7 +153,7 @@ class DesktopState(
             if (showingComponentCatalog) requestedScenario.copy(page = "components")
             else if (mainVm.navigator.topRoute == HomeRoute) {
                 requestedScenario.copy(
-                    page = homePages.getValue(mainVm.homeNavigation.selectedTab.key),
+                    page = homePages.getValue(mainVm.navigator.selectedHomeTab.key),
                 )
             } else requestedScenario.copy(page = routeName(mainVm.navigator.topRoute))
 
@@ -174,10 +174,11 @@ class DesktopState(
                 ?: if (!showingComponentCatalog && request.page !in homePages.values) {
                     routeFor(request.page)
                 } else null,
-        )
-        selectHomeTab(
-            if (request.page == "edit-whitelist") "apps"
-            else if (request.page in homePages.values) request.page else "settings",
+            homeTabKey =
+                when (request.page) {
+                    "edit-whitelist" -> BottomNavItem.AppList.key
+                    else -> homeTabKey(request.page) ?: BottomNavItem.Settings.key
+                },
         )
         lastEvent = null
         revision++
@@ -187,9 +188,9 @@ class DesktopState(
         require(page in pages)
         showingComponentCatalog = page == "components"
         if (showingComponentCatalog) return
-        if (page in homePages.values) {
-            mainVm.navigator.popToHome()
-            selectHomeTab(page)
+        val tabKey = homeTabKey(page)
+        if (tabKey != null) {
+            mainVm.navigator.openHome(tabKey)
         } else {
             mainVm.navigator.navigate(routeFor(page))
         }
@@ -203,28 +204,15 @@ class DesktopState(
 
     fun handleGkdUri(uri: String) {
         when (val link = GkdLink.parse(uri)) {
-            is GkdLink.Home -> {
-                BottomNavItem.allSubObjects
-                    .firstOrNull { it.key == link.tab }
-                    ?.let(mainVm.homeNavigation::selectTab)
-                mainVm.navigator.popToHome()
-            }
-
+            is GkdLink.Home -> mainVm.navigator.openHome(link.tab)
             is GkdLink.Page -> mainVm.navigator.openPage(link)
             GkdLink.WeChatScanner -> unsupported()
             null -> toast.show(Res.string.uri_unknown.getSync(uri))
         }
     }
 
-    private fun selectHomeTab(page: String) {
-        homePages.entries
-            .firstOrNull { it.value == page }
-            ?.let { entry ->
-                mainVm.homeNavigation.selectTab(
-                    BottomNavItem.allSubObjects.first { it.key == entry.key },
-                )
-            }
-    }
+    private fun homeTabKey(page: String): Int? =
+        homePages.entries.firstOrNull { it.value == page }?.key
 
     fun close() {
         viewModelStore.clear()

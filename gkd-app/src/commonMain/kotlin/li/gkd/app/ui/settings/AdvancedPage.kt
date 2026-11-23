@@ -45,6 +45,7 @@ import li.gkd.app.ui.navigation.AdvancedSection
 import li.gkd.app.ui.navigation.AppNavEntry
 import li.gkd.app.ui.navigation.DebugSettingsRoute
 import li.gkd.app.ui.navigation.ExternalCallsRoute
+import li.gkd.app.ui.navigation.MatchDebugRoute
 import li.gkd.app.ui.navigation.QuickSettingsTilesRoute
 import li.gkd.app.ui.navigation.SnapshotPageRoute
 import li.gkd.app.ui.navigation.SnapshotSettingsRoute
@@ -125,7 +126,7 @@ fun AdvancedPage(
                     .verticalScroll(rememberScrollState()),
         ) {
             AdvancedSectionTitle(
-                stringResource(Res.string.advanced_snapshot_capture),
+                stringResource(Res.string.advanced_troubleshooting),
                 showTop = false,
             )
             GkTextSwitch(
@@ -139,6 +140,11 @@ fun AdvancedPage(
                 checked = snapshotButtonRunning(),
                 onCheckedChange = host::setSnapshotButtonEnabled,
             )
+            GkSettingItem(
+                title = stringResource(Res.string.advanced_logs_diagnostics),
+                onClick = { mainVm.navigator.navigate(MatchDebugRoute) },
+            )
+            AdvancedSectionTitle(stringResource(Res.string.advanced_snapshot_capture))
             GkSettingItem(
                 title = stringResource(Res.string.snapshot_records),
                 onClick = { mainVm.navigator.navigate(SnapshotPageRoute) },

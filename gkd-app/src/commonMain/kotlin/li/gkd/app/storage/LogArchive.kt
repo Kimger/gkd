@@ -1,21 +1,38 @@
 package li.gkd.app.storage
 
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 import li.gkd.app.logging.LogUtils
+import li.gkd.db.captureDatabaseLogSnapshot
 
 object LogArchive {
     private val layout
         get() = appStorage()
 
-    fun build(
+    suspend fun build(
         metadata: Map<String, () -> String>,
-        additionalDirectories: List<File> = emptyList(),
+        privilegeCrashFiles: List<File> = emptyList(),
         diagnosticDirectories: List<File> = emptyList(),
     ): File {
         val directory = StorageMaintenance.temporaryDirectory(layout)
+        val database = directory.resolve("db")
+        captureDatabaseLogSnapshot().writeJsonFiles(database)
         val metadataDirectory =
             Files.createDirectory(directory.resolve("metadata").toPath()).toFile()
+        val privilegeCrashes = directory.resolve("priv-crash")
+        if (privilegeCrashFiles.isNotEmpty()) {
+            Files.createDirectory(privilegeCrashes.toPath())
+            for (file in privilegeCrashFiles) {
+                val target = privilegeCrashes.resolve(file.name).toPath()
+                try {
+                    Files.copy(file.toPath(), target)
+                } catch (e: IOException) {
+                    Files.deleteIfExists(target)
+                    LogUtils.w("Unable to copy privilege crash report: ${file.name}", e)
+                }
+            }
+        }
         val logs = directory.resolve("log")
         LogUtils.copyLogs(logs)
         metadata.forEach { (name, content) ->
@@ -30,13 +47,16 @@ object LogArchive {
                 }
                 listOf(target)
             }
-        return buildArchive(metadataDirectory, logs, additionalDirectories + diagnostics)
+        return buildArchive(
+            metadataDirectory,
+            logs,
+            listOf(database, privilegeCrashes) + diagnostics,
+        )
     }
 
     private fun buildArchive(metadata: File, logs: File, additionalDirectories: List<File>): File {
         val files =
             (listOf(
-                    layout.db,
                     layout.store,
                     layout.subscription,
                     logs,
