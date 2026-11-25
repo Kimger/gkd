@@ -14,6 +14,8 @@ import li.gkd.app.rule.RuleStatus
 interface RuleQueryNodes<N : Any> {
     suspend fun root(): N?
 
+    suspend fun popupRoot(rule: AppRule): N? = null
+
     fun appId(node: N): String?
 
     suspend fun refresh(node: N): N?
@@ -71,7 +73,8 @@ suspend fun <N : Any> queryRules(
         sourceNode?.let { if (sourceUsed) sourceNode = nodes.refresh(it) }
         sourceUsed = true
         work.trace(MatchStage.Root, "reading_node", rule)
-        val node = sourceNode ?: nodes.root()
+        val popupRule = (rule as? AppRule)?.takeIf { it.matchAppPopup }
+        val node = if (popupRule != null) nodes.popupRoot(popupRule) else sourceNode ?: nodes.root()
         work.ensureCurrent()
         if (node == null) {
             work.trace(MatchStage.Root, "node_unavailable", rule)
@@ -134,7 +137,14 @@ suspend fun <N : Any> queryRules(
         }
         work.ensureCurrent()
         work.trace(MatchStage.Action, "action_started", rule)
-        val result = work.performAction(rule) { nodes.perform(rule, target) }
+        val result = work.performAction(rule) {
+            if (popupRule != null && nodes.popupRoot(popupRule) != node) {
+                work.trace(MatchStage.Action, "popup_window_changed", rule)
+                ActionResult("clickNode", false)
+            } else {
+                nodes.perform(rule, target)
+            }
+        }
         work.trace(MatchStage.Action, result.outcomeReason, rule, action = result)
         observed?.invoke(
             rule,

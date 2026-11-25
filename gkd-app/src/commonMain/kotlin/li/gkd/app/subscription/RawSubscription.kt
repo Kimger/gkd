@@ -437,6 +437,7 @@ data class RawSubscription(
 
     @Serializable
     data class RawAppRule(
+        val matchAppPopup: Boolean? = null,
         override val key: Int?,
         override val name: String?,
         override val preKeys: List<Int>?,

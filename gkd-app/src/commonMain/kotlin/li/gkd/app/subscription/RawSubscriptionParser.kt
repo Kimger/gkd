@@ -304,7 +304,16 @@ private class Parser {
                 is JsonPrimitive,
                 is JsonArray -> JsonObject(emptyMap())
             }
+        val matchAppPopup = getBoolean(jsonObject, "matchAppPopup")
+        val action = getString(jsonObject, "action")
+        if (matchAppPopup == true &&
+            ((action != null && action != "clickNode") ||
+                (jsonObject["position"] ?: JsonNull) != JsonNull || (jsonObject["swipeArg"] ?: JsonNull) != JsonNull)
+        ) {
+            at("matchAppPopup") { fail("Popup rules support node clicks only") }
+        }
         return RawAppRule(
+            matchAppPopup = matchAppPopup,
             activityIds = getStringIArray(jsonObject, "activityIds"),
             excludeActivityIds = getStringIArray(jsonObject, "excludeActivityIds"),
             matches =
@@ -319,7 +328,7 @@ private class Parser {
             actionDelay = getLong(jsonObject, "actionDelay") ?: getLong(jsonObject, "delay"),
             actionDelayRange = getActionDelayRange(jsonObject),
             preKeys = getIntIArray(jsonObject, "preKeys"),
-            action = getString(jsonObject, "action"),
+            action = action,
             fastQuery = getBoolean(jsonObject, "fastQuery"),
             matchRoot = getBoolean(jsonObject, "matchRoot"),
             actionMaximum = getInt(jsonObject, "actionMaximum"),

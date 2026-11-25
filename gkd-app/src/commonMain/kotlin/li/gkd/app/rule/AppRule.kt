@@ -17,6 +17,7 @@ class AppRule(
     val group = g.group
     val app = g.app
     val enable = RuleScopePolicy.appVersionMatches(group, rule, appInfo)
+    val matchAppPopup = rule.matchAppPopup == true
     val appId = app.id
     private val activityIds =
         RuleScopePolicy.fixActivities(app.id, rule.activityIds ?: group.activityIds)
@@ -31,6 +32,7 @@ class AppRule(
 
     override fun sameScope(other: ResolvedRule): Boolean =
         other is AppRule &&
+            matchAppPopup == other.matchAppPopup &&
             enable == other.enable &&
             appId == other.appId &&
             activityIds == other.activityIds &&

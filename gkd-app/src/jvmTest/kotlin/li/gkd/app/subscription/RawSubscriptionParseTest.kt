@@ -47,6 +47,16 @@ class RawSubscriptionParseTest {
     }
 
     @Test
+    fun popupRuleSurvivesSerializationAndRejectsCoordinateActions() {
+        fun appRule(action: String) =
+            "apps:[{id:'app',groups:[{key:0,name:'test',rules:[{matchAppPopup:true,matches:'*',action:'$action'}]}]}]"
+        val sub = parse(appRule("clickNode"))
+        val restored = RawSubscriptionParser.parse(SubscriptionJson.json.encodeToString(sub), json5 = false)
+        assertEquals(true, restored.apps.single().groups.single().rules.single().matchAppPopup)
+        assertPath(appRule("clickCenter"), "$.apps[0].groups[0].rules[0].matchAppPopup")
+    }
+
+    @Test
     fun reportsMissingFieldsAndContainerTypes() {
         val missing =
             assertThrows(SubscriptionParseException::class.java) {

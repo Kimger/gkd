@@ -5,6 +5,7 @@ import android.util.Log
 import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
@@ -107,6 +108,8 @@ class AndroidMatchHost(private val service: AndroidAutomationSession) {
                     if (it == null) requestRoot(MatchNodeReadReason.MissingOrExpired)
                 }
 
+            override suspend fun popupRoot(rule: AppRule) = readPopupRoot(rule)
+
             override fun appId(node: AccessibilityNodeInfo) = node.packageName?.toString()
 
             override suspend fun refresh(node: AccessibilityNodeInfo) =
@@ -124,13 +127,35 @@ class AndroidMatchHost(private val service: AndroidAutomationSession) {
 
             override suspend fun match(rule: ResolvedRule, node: AccessibilityNodeInfo) =
                 MatchingRuntime.nodeReader.query {
-                    a11yContext.queryRule(rule, node, coordinator.diagnostics)
+                    val context =
+                        if (rule is AppRule && rule.matchAppPopup) {
+                            A11yQueryContext(
+                                getRoot = { node },
+                                diagnostics = coordinator.diagnostics,
+                                nodeReader = MatchingRuntime.nodeReader,
+                            ).apply {
+                                queryJob = a11yContext.queryJob
+                                queryPage = a11yContext.queryPage
+                                queryRunId = a11yContext.queryRunId
+                                rootCache.value = node
+                            }
+                        } else a11yContext
+                    context.queryRule(rule, node, coordinator.diagnostics)
                 }
 
             override suspend fun perform(
                 rule: ResolvedRule,
                 node: AccessibilityNodeInfo,
             ): ActionResult {
+                if (rule is AppRule && rule.matchAppPopup) {
+                    val target = a11yContext.refresh(node)
+                    if (target == null || !target.isVisibleToUser ||
+                        target.packageName?.toString() != rule.appId
+                    ) return ActionResult(ActionPerformer.ClickNode.action, false)
+                    return ActionPerformer.ClickNode.perform(
+                        target, rule.parameters, coordinator.diagnostics.enabled,
+                    )
+                }
                 if (!isActionContextCurrent(node)) {
                     throw CancellationException("action_window_changed")
                 }
@@ -144,6 +169,23 @@ class AndroidMatchHost(private val service: AndroidAutomationSession) {
                             },
                     )
                     .perform(node, rule.parameters, coordinator.diagnostics.enabled)
+            }
+        }
+
+    private suspend fun readPopupRoot(rule: AppRule): AccessibilityNodeInfo? =
+        MatchingRuntime.nodeReader.query {
+            MatchingRuntime.nodeReader.read(name = "AppPopupRoot", runId = a11yContext.queryRunId) {
+                val windows = service.windowInfos
+                val parent = windows.firstOrNull { it.isActive } ?: return@read null
+                val root = parent.root ?: return@read null
+                if (root.packageName?.toString() != rule.appId || !isActionContextCurrent(root)) {
+                    return@read null
+                }
+                val popup = windows.firstOrNull {
+                    it.type == AccessibilityWindowInfo.TYPE_APPLICATION &&
+                        it.layer > parent.layer && it.parent?.id == parent.id
+                }
+                popup?.root?.takeIf { it.packageName?.toString() == rule.appId }?.setGeneratedTime()
             }
         }
 
