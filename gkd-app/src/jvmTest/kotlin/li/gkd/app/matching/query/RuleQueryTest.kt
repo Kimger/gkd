@@ -321,13 +321,25 @@ class RuleQueryTest {
 
     @Test
     fun popupRuleNeverFallsBackToTheActivityOrEventSource() = runTest {
-        for ((initial, beforeClick) in listOf(null to null, 2 to null, 2 to 3, 2 to 2)) {
+        val cases = listOf(
+            Triple(null, null, true),
+            Triple(2, null, true),
+            Triple(2, 3, true),
+            Triple(2, 2, true),
+            Triple(2, 2, false),
+        )
+        for ((initial, beforeClick, stillCurrent) in cases) {
+            var reads = 0
+            var current = true
             var popup = initial
             val rule = rule({ 10_000 }, "matchAppPopup:true")
             val clicked = mutableListOf<Int>()
             val nodes = object : RuleQueryNodes<Int> {
                 override suspend fun root(): Int = error("unexpected activity query")
-                override suspend fun popupRoot(rule: AppRule) = popup
+                override suspend fun popupRoot(rule: AppRule): Int? {
+                    if (++reads == 2) current = stillCurrent
+                    return popup
+                }
                 override fun appId(node: Int) = "app.test"
                 override suspend fun refresh(node: Int) = node
                 override suspend fun match(rule: ResolvedRule, node: Int): Int {
@@ -345,9 +357,9 @@ class RuleQueryTest {
                     TopActivity("app.test", null), false,
                     RuleSummary(appIdToRules = mapOf("app.test" to listOf(rule))),
                 ),
-                nodes, 1, false, { true }, { _, _, _ -> }, {}, { _, _, _ -> },
+                nodes, 1, false, { current }, { _, _, _ -> }, {}, { _, _, _ -> },
             )
-            assertEquals(listOfNotNull(initial?.takeIf { it == beforeClick }), clicked)
+            assertEquals(listOfNotNull(initial?.takeIf { it == beforeClick && stillCurrent }), clicked)
         }
     }
 

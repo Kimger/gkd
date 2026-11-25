@@ -125,35 +125,38 @@ class AndroidMatchHost(private val service: AndroidAutomationSession) {
                     }
                 }
 
-            override suspend fun match(rule: ResolvedRule, node: AccessibilityNodeInfo) =
-                MatchingRuntime.nodeReader.query {
-                    val context =
-                        if (rule is AppRule && rule.matchAppPopup) {
-                            A11yQueryContext(
-                                getRoot = { node },
-                                diagnostics = coordinator.diagnostics,
-                                nodeReader = MatchingRuntime.nodeReader,
-                            ).apply {
-                                queryJob = a11yContext.queryJob
-                                queryPage = a11yContext.queryPage
-                                queryRunId = a11yContext.queryRunId
-                                rootCache.value = node
-                            }
-                        } else a11yContext
-                    context.queryRule(rule, node, coordinator.diagnostics)
+            override suspend fun match(rule: ResolvedRule, node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+                if (rule !is AppRule || !rule.matchAppPopup) {
+                    return MatchingRuntime.nodeReader.query {
+                        a11yContext.queryRule(rule, node, coordinator.diagnostics)
+                    }
                 }
+                val target = MatchingRuntime.nodeReader.query {
+                    val context = A11yQueryContext(
+                        getRoot = { node },
+                        diagnostics = coordinator.diagnostics,
+                        nodeReader = MatchingRuntime.nodeReader,
+                    ).apply {
+                        queryJob = a11yContext.queryJob
+                        queryPage = a11yContext.queryPage
+                        queryRunId = a11yContext.queryRunId
+                        rootCache.value = node
+                    }
+                    context.queryRule(rule, node, coordinator.diagnostics)
+                } ?: return null
+                // Refresh before queryRules revalidates the popup root for the click.
+                return a11yContext.refresh(target)?.takeIf {
+                    it.windowId == node.windowId && it.isVisibleToUser && it.packageName?.toString() == rule.appId
+                }
+            }
 
             override suspend fun perform(
                 rule: ResolvedRule,
                 node: AccessibilityNodeInfo,
             ): ActionResult {
                 if (rule is AppRule && rule.matchAppPopup) {
-                    val target = a11yContext.refresh(node)
-                    if (target == null || !target.isVisibleToUser ||
-                        target.packageName?.toString() != rule.appId
-                    ) return ActionResult(ActionPerformer.ClickNode.action, false)
                     return ActionPerformer.ClickNode.perform(
-                        target, rule.parameters, coordinator.diagnostics.enabled,
+                        node, rule.parameters, coordinator.diagnostics.enabled,
                     )
                 }
                 if (!isActionContextCurrent(node)) {
@@ -175,17 +178,19 @@ class AndroidMatchHost(private val service: AndroidAutomationSession) {
     private suspend fun readPopupRoot(rule: AppRule): AccessibilityNodeInfo? =
         MatchingRuntime.nodeReader.query {
             MatchingRuntime.nodeReader.read(name = "AppPopupRoot", runId = a11yContext.queryRunId) {
-                val windows = service.windowInfos
-                val parent = windows.firstOrNull { it.isActive } ?: return@read null
-                val root = parent.root ?: return@read null
-                if (root.packageName?.toString() != rule.appId || !isActionContextCurrent(root)) {
-                    return@read null
+                readA11yWindow(coordinator.diagnostics, "PopupWindow") {
+                    val windows = service.windowInfos
+                    val parent = windows.firstOrNull { it.isActive } ?: return@readA11yWindow null
+                    val root = parent.root ?: return@readA11yWindow null
+                    if (root.packageName?.toString() != rule.appId || !isActionContextCurrent(root)) {
+                        return@readA11yWindow null
+                    }
+                    val popup = windows.firstOrNull {
+                        it.type == AccessibilityWindowInfo.TYPE_APPLICATION &&
+                            it.layer > parent.layer && it.parent?.id == parent.id
+                    }
+                    popup?.root?.takeIf { it.packageName?.toString() == rule.appId }?.setGeneratedTime()
                 }
-                val popup = windows.firstOrNull {
-                    it.type == AccessibilityWindowInfo.TYPE_APPLICATION &&
-                        it.layer > parent.layer && it.parent?.id == parent.id
-                }
-                popup?.root?.takeIf { it.packageName?.toString() == rule.appId }?.setGeneratedTime()
             }
         }
 
